@@ -3,89 +3,218 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrueStroke — AI Golf Swing Analysis</title>
+    <title>TrueStroke — Premium AI Golf Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --forest-green: #1a3c34;
+            --light-green: #2d5a4e;
+            --gold: #c5a059;
+            --bg-white: #fdfdfd;
+            --text-dark: #1a1a1a;
+            --text-gray: #666666;
+        }
+
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background-color: #0a0a0a;
-            color: #ffffff;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-white);
+            color: var(--text-dark);
+            line-height: 1.6;
         }
+
+        /* Navigation */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 8%;
+            border-bottom: 1px solid #eee;
+        }
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--forest-green);
+            letter-spacing: -0.5px;
+        }
+        .nav-links a {
+            text-decoration: none;
+            color: var(--text-dark);
+            margin-left: 30px;
+            font-size: 0.9rem;
+            font-weight: 400;
+        }
+
+        /* Hero Section */
         .hero {
             text-align: center;
-            padding: 100px 20px;
-            background: linear-gradient(180deg, #0a0a0a 0%, #1a3a2a 100%);
+            padding: 80px 20px 40px;
+            max-width: 900px;
+            margin: 0 auto;
         }
-        h1 {
-            font-size: 3.5rem;
-            margin-bottom: 10px;
-            background: -webkit-linear-gradient(#ffffff, #4ade80);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 3.8rem;
+            font-weight: 600;
+            color: var(--forest-green);
+            margin-bottom: 20px;
+            line-height: 1.2;
         }
-        .subtext {
-            font-size: 1.2rem;
-            color: #a0a0a0;
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-gray);
             max-width: 600px;
-            margin: 0 auto 40px auto;
+            margin: 0 auto 40px;
         }
         .cta-btn {
-            background-color: #4ade80;
-            color: #0a0a0a;
-            padding: 15px 40px;
+            background-color: var(--forest-green);
+            color: #fff;
+            padding: 16px 45px;
             border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: bold;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: background-color 0.3s;
+            letter-spacing: 0.5px;
         }
         .cta-btn:hover {
-            transform: scale(1.05);
+            background-color: var(--light-green);
         }
+
+        /* SVG Swing Arc Animation */
+        .arc-container {
+            margin: 60px auto 0;
+            max-width: 600px;
+        }
+
+        /* Founding Members Bar */
+        .founding-bar {
+            background-color: var(--forest-green);
+            color: #fff;
+            text-align: center;
+            padding: 15px;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            margin-top: 60px;
+        }
+        .founding-bar span {
+            color: var(--gold);
+            font-weight: 600;
+        }
+
+        /* Features Section */
         .features {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 40px;
-            padding: 80px 20px;
+            padding: 100px 8%;
             max-width: 1200px;
             margin: 0 auto;
         }
         .feature-card {
-            background-color: #141414;
-            padding: 30px;
-            border-radius: 12px;
-            width: 300px;
-            border: 1px solid #262626;
+            text-align: center;
+            padding: 20px;
+        }
+        .feature-icon {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 20px;
+            border: 1px solid var(--gold);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--forest-green);
+            font-size: 1.2rem;
         }
         .feature-title {
-            color: #4ade80;
-            font-size: 1.2rem;
+            font-family: 'Playfair Display', serif;
+            font-size: 1.4rem;
+            color: var(--forest-green);
             margin-bottom: 10px;
+        }
+        .feature-text {
+            color: var(--text-gray);
+            font-size: 0.95rem;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            border-top: 1px solid #eee;
+            color: var(--text-gray);
+            font-size: 0.8rem;
         }
     </style>
 </head>
 <body>
+
+    <nav>
+        <div class="logo">TrueStroke</div>
+        <div class="nav-links">
+            <a href="#">How it Works</a>
+            <a href="#">Pricing</a>
+            <a href="#">Sign In</a>
+        </div>
+    </nav>
+
     <div class="hero">
-        <h1>TrueStroke</h1>
-        <p class="subtext">Stop guessing what's wrong with your golf swing. Upload your video. Get instant AI analysis, fix your mechanics, and drop your handicap.</p>
-        <button class="cta-btn">Analyze My Swing — Free</button>
+        <h1>The Secret to a Perfect Swing is in Your Pocket.</h1>
+        <p>Stop guessing what's wrong with your golf game. Upload your swing and get instant, expert-level AI analysis and custom drills in seconds.</p>
+        <button class="cta-btn">Analyze My Swing</button>
+
+        <!-- Minimalist SVG Swing Arc -->
+        <div class="arc-container">
+            <svg viewBox="0 0 600 200" width="100%" height="100%">
+                <path d="M50,180 Q300,-50 550,180" fill="none" stroke="#c5a059" stroke-width="2" stroke-dasharray="10, 10" />
+                <path d="M50,180 Q300,-50 550,180" fill="none" stroke="#1a3c34" stroke-width="3" class="swing-path" />
+                <circle cx="50" cy="180" r="5" fill="#1a3c34" />
+                <circle cx="550" cy="180" r="5" fill="#1a3c34" />
+            </svg>
+            <style>
+                .swing-path {
+                    stroke-dasharray: 800;
+                    stroke-dashoffset: 800;
+                    animation: drawArc 3s ease-in-out infinite alternate;
+                }
+                @keyframes drawArc {
+                    0% { stroke-dashoffset: 800; }
+                    100% { stroke-dashoffset: 0; }
+                }
+            </style>
+        </div>
+    </div>
+
+    <div class="founding-bar">
+        JOIN THE FIRST 100 FOUNDING MEMBERS AND LOCK IN <span>LIFETIME 50% OFF</span>
     </div>
 
     <div class="features">
         <div class="feature-card">
-            <div class="feature-title">⚡ Instant Feedback</div>
-            <p>No more waiting weeks for a $150 instructor. Get a full breakdown of your swing in 30 seconds.</p>
+            <div class="feature-icon">⚡</div>
+            <div class="feature-title">Instant Feedback</div>
+            <div class="feature-text">No more waiting weeks for a $150 instructor. Get a full breakdown of your mechanics in 30 seconds.</div>
         </div>
         <div class="feature-card">
-            <div class="feature-title">🎯 Custom Drills</div>
-            <p>Our AI doesn't just point out flaws. It gives you the exact drills to fix your specific mistakes.</p>
+            <div class="feature-icon">🎯</div>
+            <div class="feature-title">Custom Drill Plans</div>
+            <div class="feature-text">Our AI doesn't just point out flaws. It gives you the exact drills to fix your specific mistakes.</div>
         </div>
         <div class="feature-card">
-            <div class="feature-title">📈 Track Progress</div>
-            <p>Save every swing to your dashboard and watch your mechanics improve over time.</p>
+            <div class="feature-icon">📈</div>
+            <div class="feature-title">Track Your Progress</div>
+            <div class="feature-text">Save every swing to your dashboard and watch your mechanics improve over time.</div>
         </div>
     </div>
+
+    <footer>
+        © 2024 TrueStroke. All rights reserved. Built for golfers, by golfers.
+    </footer>
+
 </body>
 </html>
