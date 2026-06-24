@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swing Analysis — TrueStroke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --forest-green: #1a3c34;
+            --light-green: #2d5a4e;
+            --gold: #c5a059;
+            --bg-white: #fdfdfd;
+            --text-dark: #1a1a1a;
+            --text-gray: #666666;
+            --border-light: #eee;
+        }
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
+        .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
+        .container { max-width: 800px; margin: 60px auto; padding: 0 20px; }
+        .loader { text-align: center; padding: 100px 0; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--forest-green); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .report-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 40px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); display: none; }
+        .report-card h2 { font-family: 'Playfair Display', serif; color: var(--forest-green); margin-top: 0; border-bottom: 2px solid var(--gold); padding-bottom: 10px; display: inline-block; }
+        .report-card ul { padding-left: 20px; color: var(--text-gray); line-height: 1.8; }
+        .score-circle { width: 100px; height: 100px; border-radius: 50%; border: 4px solid var(--gold); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; color: var(--forest-green); margin: 0 auto 30px; }
+        .cta-box { text-align: center; background: var(--forest-green); color: #fff; padding: 40px; border-radius: 8px; margin-top: 40px; display: none; }
+        .cta-box h3 { font-family: 'Playfair Display', serif; font-size: 1.8rem; margin-bottom: 20px; }
+        .cta-btn { background-color: var(--gold); color: var(--text-dark); padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; text-decoration: none; display: inline-block; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html" class="logo">TrueStroke</a>
+    </nav>
+
+    <div class="container">
+        <!-- Loading State -->
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <h2>TrueStroke AI is analyzing your swing...</h2>
+            <p style="color: var(--text-gray);">Checking spine angle, club path, and weight transfer.</p>
+        </div>
+
+        <!-- The Report -->
+        <div id="report-content">
+            <div style="text-align: center;">
+                <div class="score-circle">82</div>
+                <p style="color: var(--text-gray); font-size: 1.2rem;">Swing Efficiency Score</p>
+            </div>
+
+            <div class="report-card">
+                <h2>⚠️ Critical Flaws Detected</h2>
+                <ul>
+                    <li><strong>Early Extension:</strong> Your hips are thrusting toward the ball at impact, causing a loss of posture and inconsistent contact.</li>
+                    <li><strong>Over-the-Top Move:</strong> Your club is approaching the ball from outside the target line, resulting in a pull-cut (slice) spin.</li>
+                </ul>
+            </div>
+
+            <div class="report-card">
+                <h2>🎯 Your Custom Drill Plan</h2>
+                <ul>
+                    <li><strong>The Wall Drill:</strong> Stand with your glutes touching a wall. Make slow-motion swings focusing on keeping your glutes on the wall through impact. (3 sets of 10 reps).</li>
+                    <li><strong>The Tee Drill:</strong> Place a tee 2 inches outside the ball. Practice hitting the ball without hitting the tee to fix your over-the-top path.</li>
+                </ul>
+            </div>
+
+            <div class="cta-box">
+                <h3>Want Full Video Breakdowns?</h3>
+                <p style="margin-bottom: 30px; color: #ddd;">Upgrade to TrueStroke Pro for unlimited AI video analyses, 4K frame-by-frame breakdowns, and personalized progress tracking.</p>
+                <a href="#" class="cta-btn">Upgrade to Pro — $15/mo</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate the AI taking 3 seconds to "think"
+        setTimeout(() => {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('report-content').style.display = 'block';
+            document.querySelector('.cta-box').style.display = 'block';
+        }, 3000);
+    </script>
+</body>
+</html>
