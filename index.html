@@ -25,7 +25,6 @@
             line-height: 1.6;
         }
 
-        /* Navigation */
         nav {
             display: flex;
             justify-content: space-between;
@@ -48,7 +47,6 @@
             font-weight: 400;
         }
 
-        /* Hero Section */
         .hero {
             text-align: center;
             padding: 80px 20px 40px;
@@ -80,18 +78,18 @@
             cursor: pointer;
             transition: background-color 0.3s;
             letter-spacing: 0.5px;
+            text-decoration: none;
+            display: inline-block;
         }
         .cta-btn:hover {
             background-color: var(--light-green);
         }
 
-        /* SVG Swing Arc Animation */
         .arc-container {
             margin: 60px auto 0;
             max-width: 600px;
         }
 
-        /* Founding Members Bar */
         .founding-bar {
             background-color: var(--forest-green);
             color: #fff;
@@ -106,7 +104,6 @@
             font-weight: 600;
         }
 
-        /* Features Section */
         .features {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -142,7 +139,6 @@
             font-size: 0.95rem;
         }
 
-        /* Footer */
         footer {
             text-align: center;
             padding: 40px 20px;
@@ -159,16 +155,15 @@
         <div class="nav-links">
             <a href="#">How it Works</a>
             <a href="#">Pricing</a>
-            <a href="#">Sign In</a>
+            <a href="dashboard.html">Sign In</a>
         </div>
     </nav>
 
     <div class="hero">
         <h1>The Secret to a Perfect Swing is in Your Pocket.</h1>
         <p>Stop guessing what's wrong with your golf game. Upload your swing and get instant, expert-level AI analysis and custom drills in seconds.</p>
-        <button class="cta-btn">Analyze My Swing</button>
+        <a href="dashboard.html" class="cta-btn">Analyze My Swing</a>
 
-        <!-- Minimalist SVG Swing Arc -->
         <div class="arc-container">
             <svg viewBox="0 0 600 200" width="100%" height="100%">
                 <path d="M50,180 Q300,-50 550,180" fill="none" stroke="#c5a059" stroke-width="2" stroke-dasharray="10, 10" />
