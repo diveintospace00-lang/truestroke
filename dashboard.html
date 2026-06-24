@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — TrueStroke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --forest-green: #1a3c34;
+            --light-green: #2d5a4e;
+            --gold: #c5a059;
+            --bg-white: #fdfdfd;
+            --text-dark: #1a1a1a;
+            --text-gray: #666666;
+            --border-light: #eee;
+        }
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-white);
+            color: var(--text-dark);
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 8%;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--forest-green);
+            text-decoration: none;
+        }
+        .nav-links a {
+            text-decoration: none;
+            color: var(--text-dark);
+            margin-left: 30px;
+            font-size: 0.9rem;
+        }
+        .container {
+            max-width: 700px;
+            margin: 80px auto;
+            padding: 0 20px;
+            text-align: center;
+        }
+        h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            color: var(--forest-green);
+            margin-bottom: 10px;
+        }
+        .subtext {
+            color: var(--text-gray);
+            margin-bottom: 50px;
+        }
+        .upload-box {
+            border: 2px dashed var(--gold);
+            border-radius: 8px;
+            padding: 60px 20px;
+            background-color: #fff;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .upload-box:hover {
+            background-color: #faf8f3;
+        }
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+        .upload-text {
+            color: var(--text-gray);
+            font-size: 1.1rem;
+        }
+        .upload-btn {
+            background-color: var(--forest-green);
+            color: #fff;
+            padding: 14px 40px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 40px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .upload-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .upload-btn:hover:not(:disabled) {
+            background-color: var(--light-green);
+        }
+        #status {
+            margin-top: 30px;
+            font-size: 1.1rem;
+            color: var(--forest-green);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <a href="index.html" class="logo">TrueStroke</a>
+        <div class="nav-links">
+            <a href="#">Dashboard</a>
+            <a href="#">Sign Out</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>Upload Your Swing</h1>
+        <p class="subtext">Upload a 3-5 second video of your golf swing (down-the-line or face-on).</p>
+        
+        <div class="upload-box" id="dropzone">
+            <input type="file" id="fileInput" accept="video/*" style="display: none;">
+            <div class="upload-icon">🏌️‍♂️</div>
+            <div class="upload-text" id="dropzoneText">Click to select or drag a video here</div>
+        </div>
+        
+        <button class="upload-btn" id="analyzeBtn" disabled>Analyze My Swing</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        // ==========================================
+        // PASTE YOUR SUPABASE INFO HERE
+        const SUPABASE_URL = 'https://ponmbdzsjkjnczckczyz.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN';
+        // ==========================================
+
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const status = document.getElementById('status');
+        const dropzoneText = document.getElementById('dropzoneText');
+        let selectedFile = null;
+
+        dropzone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                selectedFile = e.target.files[0];
+                dropzoneText.innerText = `Selected: ${selectedFile.name}`;
+                analyzeBtn.disabled = false;
+            }
+        });
+
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            status.innerText = 'Uploading video...';
+            analyzeBtn.disabled = true;
+
+            const fileName = `${Date.now()}_${selectedFile.name}`;
+
+            try {
+                // Upload to Supabase Storage
+                const { data, error } = await supabase.storage
+                    .from('swing-videos')
+                    .upload(fileName, selectedFile);
+
+                if (error) throw error;
+
+                status.innerText = 'Video uploaded successfully! AI is analyzing your swing...';
+                
+                // Placeholder for the AI analysis step we will build next
+                setTimeout(() => {
+                    status.innerText = 'Analysis complete! (AI integration coming next step)';
+                }, 3000);
+
+            } catch (error) {
+                status.innerText = `Error: ${error.message}`;
+                analyzeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
