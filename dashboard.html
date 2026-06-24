@@ -10,13 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
-            --forest-green: #1a3c34;
-            --light-green: #2d5a4e;
-            --gold: #c5a059;
-            --bg-white: #fdfdfd;
-            --text-dark: #1a1a1a;
-            --text-gray: #666666;
-            --border-light: #eee;
+            --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059;
+            --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee;
         }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
         nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
@@ -43,28 +38,22 @@
             <a href="#">Sign Out</a>
         </div>
     </nav>
-
     <div class="container">
         <h1>Upload Your Swing</h1>
         <p class="subtext">Upload a 3-5 second video of your golf swing (down-the-line or face-on).</p>
-        
         <div class="upload-box" id="dropzone">
             <input type="file" id="fileInput" accept="video/*" style="display: none;">
             <div class="upload-icon">🏌️‍♂️</div>
             <div class="upload-text" id="dropzoneText">Click to select or drag a video here</div>
         </div>
-        
         <button class="upload-btn" id="analyzeBtn" disabled>Analyze My Swing</button>
-        
         <div id="status"></div>
     </div>
-
     <script>
         const SUPABASE_URL = 'https://ponmbdzsjkjnczckczyz.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN';
+        const SUPABASE_ANON_KEY = 'sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN'; // PASTE KEY HERE
 
         const sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('fileInput');
         const analyzeBtn = document.getElementById('analyzeBtn');
@@ -84,25 +73,24 @@
 
         analyzeBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
-
             status.innerText = 'Uploading video...';
             analyzeBtn.disabled = true;
-
             const fileName = `${Date.now()}_${selectedFile.name}`;
 
             try {
-                const { data, error } = await sbClient.storage
-                    .from('swing-videos')
-                    .upload(fileName, selectedFile);
-
+                const { data, error } = await sbClient.storage.from('swing-videos').upload(fileName, selectedFile);
                 if (error) throw error;
+
+                // Get the public URL of the uploaded video
+                const { data: urlData } = sbClient.storage.from('swing-videos').getPublicUrl(fileName);
+                const publicUrl = urlData.publicUrl;
 
                 status.innerText = 'Upload successful! Redirecting to AI analysis...';
                 
-                // Redirect to the AI analysis report page
+                // Redirect to analysis page and pass the video URL in the link
                 setTimeout(() => {
-                    window.location.href = 'analysis.html';
-                }, 1500);
+                    window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}`;
+                }, 1000);
 
             } catch (error) {
                 status.innerText = `Error: ${error.message}`;
