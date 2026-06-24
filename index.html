@@ -16,145 +16,37 @@
             --text-dark: #1a1a1a;
             --text-gray: #666666;
         }
-
-        body {
-            margin: 0;
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-white);
-            color: var(--text-dark);
-            line-height: 1.6;
-        }
-
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 25px 8%;
-            border-bottom: 1px solid #eee;
-        }
-        .logo {
-            font-family: 'Playfair Display', serif;
-            font-size: 1.6rem;
-            font-weight: 600;
-            color: var(--forest-green);
-            letter-spacing: -0.5px;
-        }
-        .nav-links a {
-            text-decoration: none;
-            color: var(--text-dark);
-            margin-left: 30px;
-            font-size: 0.9rem;
-            font-weight: 400;
-        }
-
-        .hero {
-            text-align: center;
-            padding: 80px 20px 40px;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-        .hero h1 {
-            font-family: 'Playfair Display', serif;
-            font-size: 3.8rem;
-            font-weight: 600;
-            color: var(--forest-green);
-            margin-bottom: 20px;
-            line-height: 1.2;
-        }
-        .hero p {
-            font-size: 1.25rem;
-            color: var(--text-gray);
-            max-width: 600px;
-            margin: 0 auto 40px;
-        }
-        .cta-btn {
-            background-color: var(--forest-green);
-            color: #fff;
-            padding: 16px 45px;
-            border: none;
-            border-radius: 4px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            letter-spacing: 0.5px;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .cta-btn:hover {
-            background-color: var(--light-green);
-        }
-
-        .arc-container {
-            margin: 60px auto 0;
-            max-width: 600px;
-        }
-
-        .founding-bar {
-            background-color: var(--forest-green);
-            color: #fff;
-            text-align: center;
-            padding: 15px;
-            font-size: 0.9rem;
-            letter-spacing: 1px;
-            margin-top: 60px;
-        }
-        .founding-bar span {
-            color: var(--gold);
-            font-weight: 600;
-        }
-
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 40px;
-            padding: 100px 8%;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .feature-card {
-            text-align: center;
-            padding: 20px;
-        }
-        .feature-icon {
-            width: 50px;
-            height: 50px;
-            margin: 0 auto 20px;
-            border: 1px solid var(--gold);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--forest-green);
-            font-size: 1.2rem;
-        }
-        .feature-title {
-            font-family: 'Playfair Display', serif;
-            font-size: 1.4rem;
-            color: var(--forest-green);
-            margin-bottom: 10px;
-        }
-        .feature-text {
-            color: var(--text-gray);
-            font-size: 0.95rem;
-        }
-
-        footer {
-            text-align: center;
-            padding: 40px 20px;
-            border-top: 1px solid #eee;
-            color: var(--text-gray);
-            font-size: 0.8rem;
-        }
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); line-height: 1.6; scroll-behavior: smooth; }
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid #eee; position: sticky; top: 0; background: var(--bg-white); z-index: 100; }
+        .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); letter-spacing: -0.5px; }
+        .nav-links a { text-decoration: none; color: var(--text-dark); margin-left: 30px; font-size: 0.9rem; font-weight: 400; }
+        .hero { text-align: center; padding: 80px 20px 40px; max-width: 900px; margin: 0 auto; }
+        .hero h1 { font-family: 'Playfair Display', serif; font-size: 3.8rem; font-weight: 600; color: var(--forest-green); margin-bottom: 20px; line-height: 1.2; }
+        .hero p { font-size: 1.25rem; color: var(--text-gray); max-width: 600px; margin: 0 auto 40px; }
+        .cta-btn { background-color: var(--forest-green); color: #fff; padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; letter-spacing: 0.5px; text-decoration: none; display: inline-block; }
+        .cta-btn:hover { background-color: var(--light-green); }
+        .arc-container { margin: 60px auto 0; max-width: 600px; }
+        .founding-bar { background-color: var(--forest-green); color: #fff; text-align: center; padding: 15px; font-size: 0.9rem; letter-spacing: 1px; margin-top: 60px; }
+        .founding-bar span { color: var(--gold); font-weight: 600; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 40px; padding: 100px 8%; max-width: 1200px; margin: 0 auto; }
+        .feature-card { text-align: center; padding: 20px; }
+        .feature-icon { width: 50px; height: 50px; margin: 0 auto 20px; border: 1px solid var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--forest-green); font-size: 1.2rem; }
+        .feature-title { font-family: 'Playfair Display', serif; font-size: 1.4rem; color: var(--forest-green); margin-bottom: 10px; }
+        .feature-text { color: var(--text-gray); font-size: 0.95rem; }
+        #pricing { padding: 100px 20px; text-align: center; max-width: 800px; margin: 0 auto; }
+        #pricing h2 { font-family: 'Playfair Display', serif; font-size: 2.5rem; color: var(--forest-green); margin-bottom: 40px; }
+        .price-card { border: 1px solid #ddd; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .price { font-size: 3rem; font-weight: bold; color: var(--forest-green); }
+        .price span { font-size: 1rem; font-weight: normal; color: var(--text-gray); }
+        footer { text-align: center; padding: 40px 20px; border-top: 1px solid #eee; color: var(--text-gray); font-size: 0.8rem; }
     </style>
 </head>
 <body>
-
     <nav>
         <div class="logo">TrueStroke</div>
         <div class="nav-links">
-            <a href="#">How it Works</a>
-            <a href="#">Pricing</a>
+            <a href="#features">How it Works</a>
+            <a href="#pricing">Pricing</a>
             <a href="dashboard.html">Sign In</a>
         </div>
     </nav>
@@ -163,7 +55,6 @@
         <h1>The Secret to a Perfect Swing is in Your Pocket.</h1>
         <p>Stop guessing what's wrong with your golf game. Upload your swing and get instant, expert-level AI analysis and custom drills in seconds.</p>
         <a href="dashboard.html" class="cta-btn">Analyze My Swing</a>
-
         <div class="arc-container">
             <svg viewBox="0 0 600 200" width="100%" height="100%">
                 <path d="M50,180 Q300,-50 550,180" fill="none" stroke="#c5a059" stroke-width="2" stroke-dasharray="10, 10" />
@@ -172,15 +63,8 @@
                 <circle cx="550" cy="180" r="5" fill="#1a3c34" />
             </svg>
             <style>
-                .swing-path {
-                    stroke-dasharray: 800;
-                    stroke-dashoffset: 800;
-                    animation: drawArc 3s ease-in-out infinite alternate;
-                }
-                @keyframes drawArc {
-                    0% { stroke-dashoffset: 800; }
-                    100% { stroke-dashoffset: 0; }
-                }
+                .swing-path { stroke-dasharray: 800; stroke-dashoffset: 800; animation: drawArc 3s ease-in-out infinite alternate; }
+                @keyframes drawArc { 0% { stroke-dashoffset: 800; } 100% { stroke-dashoffset: 0; } }
             </style>
         </div>
     </div>
@@ -189,7 +73,7 @@
         JOIN THE FIRST 100 FOUNDING MEMBERS AND LOCK IN <span>LIFETIME 50% OFF</span>
     </div>
 
-    <div class="features">
+    <div class="features" id="features">
         <div class="feature-card">
             <div class="feature-icon">⚡</div>
             <div class="feature-title">Instant Feedback</div>
@@ -207,9 +91,19 @@
         </div>
     </div>
 
+    <div id="pricing">
+        <h2>Simple, Transparent Pricing</h2>
+        <div class="price-card">
+            <div class="price">$15<span>/month</span></div>
+            <p style="color: var(--text-gray); margin: 20px 0;">Unlimited AI Swing Analyses</p>
+            <p style="color: var(--text-gray); margin: 20px 0;">Custom Drill Recommendations</p>
+            <p style="color: var(--text-gray); margin: 20px 0;">Progress Tracking Dashboard</p>
+            <a href="dashboard.html" class="cta-btn" style="margin-top: 20px;">Start Free Trial</a>
+        </div>
+    </div>
+
     <footer>
         © 2024 TrueStroke. All rights reserved. Built for golfers, by golfers.
     </footer>
-
 </body>
 </html>
