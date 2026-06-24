@@ -9,13 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --forest-green: #1a3c34;
-            --light-green: #2d5a4e;
-            --gold: #c5a059;
-            --bg-white: #fdfdfd;
-            --text-dark: #1a1a1a;
-            --text-gray: #666666;
-            --border-light: #eee;
+            --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059;
+            --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee;
         }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
         nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
@@ -27,11 +22,11 @@
         
         .report-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 40px; margin-bottom: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); display: none; }
         .report-card h2 { font-family: 'Playfair Display', serif; color: var(--forest-green); margin-top: 0; border-bottom: 2px solid var(--gold); padding-bottom: 10px; display: inline-block; }
-        .report-card ul { padding-left: 20px; color: var(--text-gray); line-height: 1.8; }
-        .score-circle { width: 100px; height: 100px; border-radius: 50%; border: 4px solid var(--gold); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; color: var(--forest-green); margin: 0 auto 30px; }
+        .report-card p, .report-card li { color: var(--text-gray); line-height: 1.8; }
         .cta-box { text-align: center; background: var(--forest-green); color: #fff; padding: 40px; border-radius: 8px; margin-top: 40px; display: none; }
         .cta-box h3 { font-family: 'Playfair Display', serif; font-size: 1.8rem; margin-bottom: 20px; }
-        .cta-btn { background-color: var(--gold); color: var(--text-dark); padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; text-decoration: none; display: inline-block; }
+        .cta-btn { background-color: var(--gold); color: var(--text-dark); padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+        .error-box { background: #ffeeee; color: #cc0000; padding: 20px; border-radius: 8px; display: none; }
     </style>
 </head>
 <body>
@@ -40,37 +35,29 @@
     </nav>
 
     <div class="container">
-        <!-- Loading State -->
         <div class="loader" id="loader">
             <div class="spinner"></div>
             <h2>TrueStroke AI is analyzing your swing...</h2>
             <p style="color: var(--text-gray);">Checking spine angle, club path, and weight transfer.</p>
         </div>
 
-        <!-- The Report -->
+        <div class="error-box" id="errorBox"></div>
+
         <div id="report-content">
-            <div style="text-align: center;">
-                <div class="score-circle">82</div>
-                <p style="color: var(--text-gray); font-size: 1.2rem;">Swing Efficiency Score</p>
+            <div class="report-card" id="summaryCard">
+                <h2>📋 Swing Summary</h2>
+                <div id="summaryText"></div>
             </div>
-
-            <div class="report-card">
+            <div class="report-card" id="flawsCard">
                 <h2>⚠️ Critical Flaws Detected</h2>
-                <ul>
-                    <li><strong>Early Extension:</strong> Your hips are thrusting toward the ball at impact, causing a loss of posture and inconsistent contact.</li>
-                    <li><strong>Over-the-Top Move:</strong> Your club is approaching the ball from outside the target line, resulting in a pull-cut (slice) spin.</li>
-                </ul>
+                <div id="flawsText"></div>
             </div>
-
-            <div class="report-card">
+            <div class="report-card" id="drillsCard">
                 <h2>🎯 Your Custom Drill Plan</h2>
-                <ul>
-                    <li><strong>The Wall Drill:</strong> Stand with your glutes touching a wall. Make slow-motion swings focusing on keeping your glutes on the wall through impact. (3 sets of 10 reps).</li>
-                    <li><strong>The Tee Drill:</strong> Place a tee 2 inches outside the ball. Practice hitting the ball without hitting the tee to fix your over-the-top path.</li>
-                </ul>
+                <div id="drillsText"></div>
             </div>
 
-            <div class="cta-box">
+            <div class="cta-box" id="ctaBox">
                 <h3>Want Full Video Breakdowns?</h3>
                 <p style="margin-bottom: 30px; color: #ddd;">Upgrade to TrueStroke Pro for unlimited AI video analyses, 4K frame-by-frame breakdowns, and personalized progress tracking.</p>
                 <a href="#" class="cta-btn">Upgrade to Pro — $15/mo</a>
@@ -79,12 +66,73 @@
     </div>
 
     <script>
-        // Simulate the AI taking 3 seconds to "think"
-        setTimeout(() => {
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('report-content').style.display = 'block';
-            document.querySelector('.cta-box').style.display = 'block';
-        }, 3000);
+        // PASTE YOUR GEMINI API KEY HERE
+        const GEMINI_API_KEY = 'AQ.Ab8RN6JSY1xM_7ALeRYg-Ro1X8X48NdJ8ERy-btOrkoVpNWvkDA';
+
+        // Get the video URL from the link (?video=URL)
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoUrl = urlParams.get('video');
+
+        async function analyzeSwing() {
+            if (!videoUrl) {
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('errorBox').innerText = "No video found. Please upload a video first.";
+                document.getElementById('errorBox').style.display = 'block';
+                return;
+            }
+
+            const prompt = "You are an expert PGA golf coach. Analyze this golf swing video. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+            const requestBody = {
+                contents: [{
+                    parts: [
+                        { text: prompt },
+                        { file_data: { file_uri: videoUrl, mime_type: 'video/mp4' } }
+                    ]
+                }]
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                if (data.candidates && data.candidates.length > 0) {
+                    const aiText = data.candidates[0].content.parts[0].text;
+                    
+                    // Split the AI response into sections
+                    const sections = aiText.split(/SUMMARY:|FLAWS:|DRILLS:/i);
+                    
+                    // Use regex to safely extract the HTML parts
+                    document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
+                    document.getElementById('flawsText').innerHTML = sections[2] || "<p>No flaws detected.</p>";
+                    document.getElementById('drillsText').innerHTML = sections[3] || "<p>No drills available.</p>";
+
+                    // Hide loader, show report
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('summaryCard').style.display = 'block';
+                    document.getElementById('flawsCard').style.display = 'block';
+                    document.getElementById('drillsCard').style.display = 'block';
+                    document.getElementById('ctaBox').style.display = 'block';
+                } else {
+                    throw new Error("AI could not analyze this video. Try a different angle.");
+                }
+
+            } catch (error) {
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('errorBox').innerText = `Error: ${error.message}`;
+                document.getElementById('errorBox').style.display = 'block';
+            }
+        }
+
+        // Run the function when the page loads
+        analyzeSwing();
     </script>
 </body>
 </html>
