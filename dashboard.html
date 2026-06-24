@@ -134,11 +134,11 @@
     <script>
         // ==========================================
         // PASTE YOUR SUPABASE INFO HERE
-        const SUPABASE_URL = 'https://ponmbdzsjkjnczckczyz.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN';
+        const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL_HERE';
+        const SUPABASE_ANON_KEY = 'PASTE_YOUR_PUBLISHABLE_KEY_HERE';
         // ==========================================
 
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const sbClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const dropzone = document.getElementById('dropzone');
         const fileInput = document.getElementById('fileInput');
@@ -166,8 +166,8 @@
             const fileName = `${Date.now()}_${selectedFile.name}`;
 
             try {
-                // Upload to Supabase Storage
-                const { data, error } = await supabase.storage
+                // Upload to Supabase Storage using the fixed variable name
+                const { data, error } = await sbClient.storage
                     .from('swing-videos')
                     .upload(fileName, selectedFile);
 
