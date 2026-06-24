@@ -9,10 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root {
-            --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059;
-            --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee;
-        }
+        :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
         nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
         .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
@@ -33,10 +30,7 @@
 <body>
     <nav>
         <a href="index.html" class="logo">TrueStroke</a>
-        <div class="nav-links">
-            <a href="#">Dashboard</a>
-            <a href="#">Sign Out</a>
-        </div>
+        <div class="nav-links"><a href="#">Dashboard</a><a href="#">Sign Out</a></div>
     </nav>
     <div class="container">
         <h1>Upload Your Swing</h1>
@@ -81,15 +75,14 @@
                 const { data, error } = await sbClient.storage.from('swing-videos').upload(fileName, selectedFile);
                 if (error) throw error;
 
-                // Get the public URL of the uploaded video
                 const { data: urlData } = sbClient.storage.from('swing-videos').getPublicUrl(fileName);
                 const publicUrl = urlData.publicUrl;
 
                 status.innerText = 'Upload successful! Redirecting to AI analysis...';
                 
-                // Redirect to analysis page and pass the video URL in the link
+                // Pass the video URL AND the file type (mime type) to the analysis page
                 setTimeout(() => {
-                    window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}`;
+                    window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}&mime=${encodeURIComponent(selectedFile.type)}`;
                 }, 1000);
 
             } catch (error) {
