@@ -3,240 +3,153 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swing Analysis — TrueStroke</title>
+    <title>Dashboard — TrueStroke</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
         nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
         .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
-        .container { max-width: 800px; margin: 60px auto; padding: 0 20px; text-align: center; }
-        .loader { padding: 100px 0; }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--forest-green); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .video-preview { max-width: 100%; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-light); display: none; }
-        .btn { background-color: var(--forest-green); color: #fff; padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; text-decoration: none; display: inline-block; }
-        .btn:hover { background-color: var(--light-green); }
-        .report-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 40px; margin: 30px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.03); display: none; text-align: left; }
-        .report-card h2 { font-family: 'Playfair Display', serif; color: var(--forest-green); margin-top: 0; border-bottom: 2px solid var(--gold); padding-bottom: 10px; display: inline-block; }
-        .report-card p, .report-card li { color: var(--text-gray); line-height: 1.8; }
-        .error-box { background: #ffeeee; color: #cc0000; padding: 20px; border-radius: 8px; display: none; }
+        .container { max-width: 700px; margin: 80px auto; padding: 0 20px; text-align: center; }
+        h1 { font-family: 'Playfair Display', serif; font-size: 2.5rem; color: var(--forest-green); margin-bottom: 10px; }
+        .subtext { color: var(--text-gray); margin-bottom: 50px; }
+        .upload-box { border: 2px dashed var(--gold); border-radius: 8px; padding: 60px 20px; background-color: #fff; cursor: pointer; transition: background-color 0.3s; }
+        .upload-box:hover { background-color: #faf8f3; }
+        .upload-icon { font-size: 3rem; margin-bottom: 15px; }
+        .upload-text { color: var(--text-gray); font-size: 1.1rem; }
+        .upload-btn { background-color: var(--forest-green); color: #fff; padding: 14px 40px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; margin-top: 40px; cursor: pointer; transition: background-color 0.3s; }
+        .upload-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        #status { margin-top: 30px; font-size: 1.1rem; color: var(--forest-green); font-weight: 600; min-height: 1.4em; }
+        #configError { display: none; margin: 0 auto 30px; max-width: 640px; background: #fff7e6; border: 1px solid var(--gold); color: #6b5320; border-radius: 8px; padding: 16px 20px; text-align: left; font-size: 0.95rem; }
+        #configError code { background: #f0ead9; padding: 1px 5px; border-radius: 3px; }
     </style>
 </head>
 <body>
-    <nav><a href="index.html" class="logo">TrueStroke</a></nav>
-
+    <nav>
+        <a href="index.html" class="logo">TrueStroke</a>
+    </nav>
     <div class="container">
-        <div class="loader" id="loader">
-            <div class="spinner"></div>
-            <h2 id="statusTitle">Initializing...</h2>
-            <p id="statusText" style="color: var(--text-gray);">Loading AI engine.</p>
+        <h1>Upload Your Swing</h1>
+        <p class="subtext">Upload a 3–5 second video of your golf swing. Film side-on (down-the-line) with your full body in frame.</p>
+        <div id="configError"></div>
+        <div class="upload-box" id="dropzone">
+            <input type="file" id="fileInput" accept="video/*" style="display: none;">
+            <div class="upload-icon">🏌️‍♂️</div>
+            <div class="upload-text" id="dropzoneText">Click to select a video</div>
         </div>
-
-        <video id="hiddenVideo" class="video-preview" muted playsinline></video>
-        <button class="btn" id="startBtn" style="display: none;">Run On-Device Analysis</button>
-
-        <div class="error-box" id="errorBox"></div>
-
-        <div id="report-content">
-            <div class="report-card" id="summaryCard"><h2>📋 Swing Summary</h2><div id="summaryText"></div></div>
-            <div class="report-card" id="flawsCard"><h2>⚠️ Critical Flaws Detected</h2><div id="flawsText"></div></div>
-            <div class="report-card" id="drillsCard"><h2>🎯 Your Custom Drill Plan</h2><div id="drillsText"></div></div>
-        </div>
+        <button class="upload-btn" id="analyzeBtn" disabled>Analyze My Swing</button>
+        <div id="status"></div>
     </div>
 
-    <script type="module">
-        import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+    <script>
+        // ============================================================
+        // STEP 1 — PASTE YOUR SUPABASE CREDENTIALS HERE
+        // These MUST be hardcoded. Static files on Vercel cannot read
+        // environment variables (there's no build step to inject them).
+        // The anon / publishable key is meant to live in client code —
+        // it is protected by your Row Level Security policies.
+        // Find both under: Supabase → Project Settings → API
+        // ============================================================
+        const SUPABASE_URL = "https://ponmbdzsjkjnczckczyz.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN";
+        // ============================================================
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const videoUrl = urlParams.get('video');
-        const video = document.getElementById('hiddenVideo');
-        const startBtn = document.getElementById('startBtn');
-        const loader = document.getElementById('loader');
-        const statusTitle = document.getElementById('statusTitle');
-        const statusText = document.getElementById('statusText');
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const status = document.getElementById('status');
+        const dropzoneText = document.getElementById('dropzoneText');
+        const configError = document.getElementById('configError');
 
-        let poseLandmarker;
+        let selectedFile = null;
+        let sbClient = null;
 
-        async function initLandmarker() {
-            statusText.innerText = "Downloading WebAssembly engine...";
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-            statusText.innerText = "Loading Pose AI Model...";
-            poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO",
-                numPoses: 1
-            });
-            statusText.innerText = "AI Engine Ready.";
-        }
-
-        if (!videoUrl) {
-            showError("No video found. Please upload a video first.");
-        } else {
-            video.src = videoUrl;
-            video.onloadeddata = async () => {
-                statusTitle.innerText = "Engine Loaded";
-                statusText.innerText = "Video ready. Tap below to start.";
-                startBtn.style.display = 'inline-block';
-                await initLandmarker();
-            };
-            video.onerror = () => {
-                showError("Failed to load video. The file might be corrupted or in an unsupported format.");
-            };
-        }
-
-        startBtn.addEventListener('click', async () => {
-            startBtn.style.display = 'none';
-            statusTitle.innerText = "Analyzing...";
-            statusText.innerText = "Tracking 33 joints in real-time.";
-            
-            video.currentTime = 0;
-            await video.play();
-            
-            const landmarksOverTime = [];
-            let lastVideoTime = -1;
-
-            async function processFrame() {
-                if (video.currentTime !== lastVideoTime) {
-                    lastVideoTime = video.currentTime;
-                    const result = poseLandmarker.detectForVideo(video, performance.now());
-                    if (result.landmarks && result.landmarks.length > 0) {
-                        landmarksOverTime.push({
-                            time: video.currentTime,
-                            landmarks: result.landmarks[0]
-                        });
-                    }
-                }
-
-                if (!video.ended) {
-                    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                        video.requestVideoFrameCallback(processFrame);
-                    } else {
-                        requestAnimationFrame(processFrame);
-                    }
-                } else {
-                    video.pause();
-                    statusText.innerText = "Computing biomechanics...";
-                    await computeMetrics(landmarksOverTime);
-                }
+        // Validate config BEFORE creating the client, so a missing key shows a
+        // clear message instead of throwing and silently killing the whole page.
+        function initSupabase() {
+            if (SUPABASE_URL.includes("YOUR-PROJECT-REF") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
+                configError.style.display = "block";
+                configError.innerHTML =
+                    "<strong>Setup needed:</strong> open <code>dashboard.html</code> and replace " +
+                    "<code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> with the values from " +
+                    "Supabase → Project Settings → API. Upload is disabled until then.";
+                return false;
             }
+            try {
+                sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                return true;
+            } catch (err) {
+                configError.style.display = "block";
+                configError.textContent = "Couldn't connect to Supabase: " + err.message;
+                return false;
+            }
+        }
+        const supabaseReady = initSupabase();
 
-            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                video.requestVideoFrameCallback(processFrame);
-            } else {
-                requestAnimationFrame(processFrame);
+        // Listeners attach regardless of config state, so the UI always responds.
+        dropzone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (!e.target.files || e.target.files.length === 0) return;
+            const file = e.target.files[0];
+
+            if (!file.type.startsWith('video/')) {
+                status.style.color = '#cc0000';
+                status.textContent = 'Please select a video file.';
+                return;
+            }
+            if (file.size > 50 * 1024 * 1024) {
+                status.style.color = '#cc0000';
+                status.textContent = 'That video is over 50 MB. Trim it to a 3–5s clip and try again.';
+                return;
+            }
+            selectedFile = file;
+            dropzoneText.textContent = `Selected: ${file.name}`;
+            status.style.color = 'var(--forest-green)';
+            status.textContent = '';
+            analyzeBtn.disabled = !supabaseReady;
+            if (!supabaseReady) {
+                status.style.color = '#cc0000';
+                status.textContent = 'Finish Supabase setup above before uploading.';
             }
         });
 
-        async function computeMetrics(data) {
-            if (data.length < 10) {
-                return showError("Couldn't read the swing — refilm with full body in frame, camera side-on.");
-            }
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile || !sbClient) return;
+            analyzeBtn.disabled = true;
+            status.style.color = 'var(--forest-green)';
+            status.textContent = 'Uploading video…';
 
-            let topIndex = 0;
-            let impactIndex = 0;
-            let maxWristY = -Infinity;
-            let minWristY = Infinity;
-            
-            for (let i = 0; i < data.length; i++) {
-                let wristY = data[i].landmarks[16].y;
-                if (wristY > maxWristY) {
-                    maxWristY = wristY;
-                    topIndex = i;
-                }
-            }
+            // Keep the original extension so the <video> element knows the type.
+            const safeName = selectedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+            const fileName = `${Date.now()}_${safeName}`;
 
-            for (let i = topIndex; i < data.length; i++) {
-                let wristY = data[i].landmarks[16].y;
-                if (wristY < minWristY) {
-                    minWristY = wristY;
-                    impactIndex = i;
-                }
-            }
-
-            let addressIndex = Math.floor(data.length * 0.1);
-
-            function getAngle(p1, p2) {
-                return Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180.0 / Math.PI;
-            }
-
-            let addressShoulderAngle = getAngle(data[addressIndex].landmarks[11], data[addressIndex].landmarks[12]);
-            let topShoulderAngle = getAngle(data[topIndex].landmarks[11], data[topIndex].landmarks[12]);
-            let shoulderTurn = Math.abs(topShoulderAngle - addressShoulderAngle);
-
-            let addressHipAngle = getAngle(data[addressIndex].landmarks[23], data[addressIndex].landmarks[24]);
-            let topHipAngle = getAngle(data[topIndex].landmarks[23], data[topIndex].landmarks[24]);
-            let hipRotation = Math.abs(topHipAngle - addressHipAngle);
-
-            let xFactor = shoulderTurn - hipRotation;
-
-            let addrSpineAngle = getAngle(
-                { x: (data[addressIndex].landmarks[11].x + data[addressIndex].landmarks[12].x)/2, y: (data[addressIndex].landmarks[11].y + data[addressIndex].landmarks[12].y)/2 },
-                { x: (data[addressIndex].landmarks[23].x + data[addressIndex].landmarks[24].x)/2, y: (data[addressIndex].landmarks[23].y + data[addressIndex].landmarks[24].y)/2 }
-            );
-            let impSpineAngle = getAngle(
-                { x: (data[impactIndex].landmarks[11].x + data[impactIndex].landmarks[12].x)/2, y: (data[impactIndex].landmarks[11].y + data[impactIndex].landmarks[12].y)/2 },
-                { x: (data[impactIndex].landmarks[23].x + data[impactIndex].landmarks[24].x)/2, y: (data[impactIndex].landmarks[23].y + data[impactIndex].landmarks[24].y)/2 }
-            );
-            let spineAngleChange = Math.abs(impSpineAngle - addrSpineAngle);
-
-            let backswingFrames = topIndex - addressIndex;
-            let downswingFrames = impactIndex - topIndex;
-            let tempoRatio = downswingFrames > 0 ? (backswingFrames / downswingFrames).toFixed(2) : 0;
-
-            const metrics = {
-                shoulder_turn: Math.round(shoulderTurn),
-                hip_rotation: Math.round(hipRotation),
-                x_factor: Math.round(xFactor),
-                spine_angle_change: Math.round(spineAngleChange),
-                tempo_ratio: tempoRatio
-            };
-
-            statusText.innerText = "Sending metrics to AI Coach...";
-            await sendToLLM(metrics);
-        }
-
-        async function sendToLLM(metrics) {
             try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ metrics: metrics })
-                });
+                const { error } = await sbClient.storage
+                    .from('swing-videos')
+                    .upload(fileName, selectedFile, {
+                        cacheControl: '3600',
+                        contentType: selectedFile.type || 'video/mp4',
+                        upsert: false,
+                    });
+                if (error) throw error;
 
-                const responseText = await response.text();
-                let data;
-                try { data = JSON.parse(responseText); } catch (e) {
-                    throw new Error("Backend returned HTML instead of JSON. Error: " + responseText.substring(0, 500));
-                }
+                const { data: urlData } = sbClient.storage
+                    .from('swing-videos')
+                    .getPublicUrl(fileName);
 
-                if (!response.ok) throw new Error(data.error || "Backend failed.");
-                
-                const sections = data.text.split(/SUMMARY:|FLAWS:|DRILLS:/i);
-                document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
-                document.getElementById('flawsText').innerHTML = sections[2] || "<p>No flaws detected.</p>";
-                document.getElementById('drillsText').innerHTML = sections[3] || "<p>No drills available.</p>";
-
-                loader.style.display = 'none';
-                document.getElementById('summaryCard').style.display = 'block';
-                document.getElementById('flawsCard').style.display = 'block';
-                document.getElementById('drillsCard').style.display = 'block';
-            } catch (error) {
-                showError(`Error: ${error.message}`);
+                const publicUrl = urlData.publicUrl;
+                status.textContent = 'Upload complete. Opening analysis…';
+                window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}`;
+            } catch (err) {
+                status.style.color = '#cc0000';
+                status.textContent = `Upload failed: ${err.message}`;
+                analyzeBtn.disabled = false;
             }
-        }
-
-        function showError(msg) {
-            loader.style.display = 'none';
-            const errBox = document.getElementById('errorBox');
-            errBox.innerText = msg;
-            errBox.style.display = 'block';
-        }
+        });
     </script>
 </body>
 </html>
