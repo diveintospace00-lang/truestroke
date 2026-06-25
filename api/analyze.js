@@ -8,15 +8,17 @@ export default async function handler(req, res) {
     try {
         const { videoUrl } = req.body;
 
-        // 1. Authenticate using the Service Account JSON we will put in Vercel
+        // 1. Authenticate using the Service Account JSON
+        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
         const auth = new GoogleAuth({
-            credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+            credentials,
             scopes: 'https://www.googleapis.com/auth/cloud-platform'
         });
         const client = await auth.getClient();
-        const accessToken = (await client.getAccessToken()).token;
+        const tokenResponse = await client.getAccessToken();
+        const accessToken = tokenResponse.token;
 
-        // 2. Call Gemini 1.5 Flash with the prompt
+        // 2. Call Gemini 1.5 Flash
         const prompt = "You are an expert PGA golf coach. Analyze this golf swing video. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
@@ -50,7 +52,7 @@ export default async function handler(req, res) {
             const aiText = data.candidates[0].content.parts[0].text;
             res.status(200).json({ text: aiText });
         } else {
-            throw new Error("AI could not analyze this video. Try a different angle or a clearer video.");
+            throw new Error("AI could not analyze this video.");
         }
 
     } catch (error) {
