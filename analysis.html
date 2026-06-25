@@ -7,34 +7,36 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
-    <!-- Load MediaPipe Tasks Vision directly in the browser -->
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs"></script>
     <style>
         :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
         nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
         .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
         .container { max-width: 800px; margin: 60px auto; padding: 0 20px; text-align: center; }
-        .loader { padding: 100px 0; }
+        .loader { padding: 60px 0; }
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--forest-green); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .video-preview { max-width: 100%; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-light); display: none; }
+        .video-preview { max-width: 100%; max-height: 50vh; border-radius: 8px; margin: 0 auto 20px; border: 1px solid var(--border-light); display: none; }
         .btn { background-color: var(--forest-green); color: #fff; padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; text-decoration: none; display: inline-block; }
         .btn:hover { background-color: var(--light-green); }
+        .metrics-strip { display: none; flex-wrap: wrap; gap: 14px; justify-content: center; margin: 30px 0; }
+        .metric { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 16px 20px; min-width: 120px; }
+        .metric .val { font-family: 'Playfair Display', serif; font-size: 1.8rem; color: var(--forest-green); }
+        .metric .lbl { font-size: 0.78rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
         .report-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 40px; margin: 30px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.03); display: none; text-align: left; }
         .report-card h2 { font-family: 'Playfair Display', serif; color: var(--forest-green); margin-top: 0; border-bottom: 2px solid var(--gold); padding-bottom: 10px; display: inline-block; }
         .report-card p, .report-card li { color: var(--text-gray); line-height: 1.8; }
-        .error-box { background: #ffeeee; color: #cc0000; padding: 20px; border-radius: 8px; display: none; }
+        .error-box { background: #fff3f3; color: #b00020; padding: 24px; border-radius: 8px; display: none; text-align: left; line-height: 1.7; }
+        .error-box a { color: var(--forest-green); font-weight: 600; }
     </style>
 </head>
 <body>
     <nav><a href="index.html" class="logo">TrueStroke</a></nav>
-
     <div class="container">
         <div class="loader" id="loader">
             <div class="spinner"></div>
-            <h2>Ready for Analysis</h2>
-            <p style="color: var(--text-gray);">Tap below to run on-device pose detection.</p>
+            <h2 id="statusTitle">Initializing…</h2>
+            <p id="statusText" style="color: var(--text-gray);">Loading the on-device AI engine.</p>
         </div>
 
         <video id="hiddenVideo" class="video-preview" muted playsinline></video>
@@ -42,6 +44,7 @@
 
         <div class="error-box" id="errorBox"></div>
 
+        <div class="metrics-strip" id="metricsStrip"></div>
         <div id="report-content">
             <div class="report-card" id="summaryCard"><h2>📋 Swing Summary</h2><div id="summaryText"></div></div>
             <div class="report-card" id="flawsCard"><h2>⚠️ Critical Flaws Detected</h2><div id="flawsText"></div></div>
@@ -52,188 +55,262 @@
     <script type="module">
         import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const videoUrl = urlParams.get('video');
-        const video = document.getElementById('hiddenVideo');
-        const startBtn = document.getElementById('startBtn');
-        const loader = document.getElementById('loader');
+        const $ = (id) => document.getElementById(id);
+        const loader = $("loader"), statusTitle = $("statusTitle"), statusText = $("statusText");
+        const video = $("hiddenVideo"), startBtn = $("startBtn"), errorBox = $("errorBox");
 
-        let poseLandmarker;
+        // Lite model + GPU delegate = fast on phones. (Heavy model on CPU is the usual cause of slow/hanging analysis.)
+        const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+        const WASM_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 
-        async function initLandmarker() {
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-            poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO",
-                numPoses: 1
-            });
+        // MediaPipe BlazePose landmark indices
+        const L_SHOULDER = 11, R_SHOULDER = 12, L_WRIST = 15, R_WRIST = 16, L_HIP = 23, R_HIP = 24;
+
+        let poseLandmarker = null;
+        let frames = [];
+        let running = false;
+        let lastFrameAt = 0;
+        let watchdog = null, stallTimer = null;
+
+        function setStatus(title, text) {
+            statusTitle.textContent = title;
+            if (text !== undefined) statusText.textContent = text;
+        }
+        function showError(html) {
+            running = false;
+            clearTimeout(watchdog); clearInterval(stallTimer);
+            loader.style.display = "none";
+            startBtn.style.display = "none";
+            video.style.display = "none";
+            errorBox.style.display = "block";
+            errorBox.innerHTML = html;
         }
 
-        if (!videoUrl) {
-            showError("No video found. Please upload a video first.");
-        } else {
-            video.src = videoUrl;
-            video.onloadeddata = async () => {
-                loader.innerHTML = '<h2>AI Engine Loaded</h2><p style="color: var(--text-gray);">Video ready. Tap below to start.</p>';
-                startBtn.style.display = 'inline-block';
-                await initLandmarker();
-            };
-        }
+        // ---- Read the uploaded video URL ----
+        const videoUrl = new URLSearchParams(location.search).get("video");
 
-        startBtn.addEventListener('click', async () => {
-            startBtn.style.display = 'none';
-            loader.innerHTML = '<div class="spinner"></div><h2>Analyzing biomechanics on-device...</h2><p style="color: var(--text-gray);">Tracking 33 joints in real-time.</p>';
-            
-            video.currentTime = 0;
-            await video.play();
-            
-            const landmarksOverTime = [];
-            let lastVideoTime = -1;
-
-            async function processFrame() {
-                if (video.currentTime !== lastVideoTime) {
-                    lastVideoTime = video.currentTime;
-                    const result = poseLandmarker.detectForVideo(video, performance.now());
-                    if (result.landmarks && result.landmarks.length > 0) {
-                        landmarksOverTime.push({
-                            time: video.currentTime,
-                            landmarks: result.landmarks[0]
-                        });
-                    }
-                }
-
-                if (!video.ended) {
-                    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                        video.requestVideoFrameCallback(processFrame);
-                    } else {
-                        requestAnimationFrame(processFrame);
-                    }
-                } else {
-                    video.pause();
-                    await computeMetrics(landmarksOverTime);
-                }
+        // ---- Init the engine ONCE, in parallel with loading the video ----
+        async function init() {
+            if (!videoUrl) {
+                showError("No swing video was provided. Please <a href='dashboard.html'>upload a swing</a> first.");
+                return;
+            }
+            try {
+                const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
+                poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
+                    baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+                    runningMode: "VIDEO",
+                    numPoses: 1,
+                });
+            } catch (err) {
+                showError("Couldn't start the AI engine: " + err.message + "<br>Try reloading on a recent version of Chrome or Safari.");
+                return;
             }
 
-            if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-                video.requestVideoFrameCallback(processFrame);
+            // crossOrigin must be set BEFORE src so MediaPipe can read pixels from the
+            // Supabase-hosted video without tainting (otherwise pose detection fails).
+            video.crossOrigin = "anonymous";
+            video.src = videoUrl;
+
+            video.addEventListener("loadeddata", () => {
+                loader.style.display = "none";
+                video.style.display = "block";
+                startBtn.style.display = "inline-block";
+            }, { once: true });
+
+            video.addEventListener("error", () => {
+                showError("Couldn't load the video. If it was just uploaded, wait a few seconds and refresh. (The storage bucket must be public and allow cross-origin reads.)");
+            }, { once: true });
+        }
+        init();
+
+        // ---- User taps to start: this gesture is required for iOS playback ----
+        startBtn.addEventListener("click", async () => {
+            if (!poseLandmarker || running) return;
+            startBtn.style.display = "none";
+            loader.style.display = "block";
+            setStatus("Analyzing your swing…", "Tracking your body through the swing — keep this tab open.");
+            frames = [];
+            running = true;
+
+            try {
+                video.currentTime = 0;
+                await video.play();   // video stays visible so frames actually render
+            } catch (err) {
+                showError("Couldn't start playback. Tap the video once to start it, then re-run.");
+                return;
+            }
+
+            // Hard stop so it can never hang forever (iOS 'ended' is unreliable).
+            const maxMs = (isFinite(video.duration) ? video.duration * 1000 : 8000) + 4000;
+            watchdog = setTimeout(() => finish("watchdog"), maxMs);
+
+            // Stall guard: if no new frame arrives for 1.5s, wrap up.
+            lastFrameAt = performance.now();
+            stallTimer = setInterval(() => {
+                if (running && performance.now() - lastFrameAt > 1500) finish("stall");
+            }, 500);
+
+            if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+                video.requestVideoFrameCallback(onFrame);
             } else {
-                requestAnimationFrame(processFrame);
+                rafLoop(); // Firefox / older browsers
             }
         });
 
-        async function computeMetrics(data) {
-            if (data.length < 10) {
-                return showError("Couldn't read the swing — refilm with full body in frame, camera side-on.");
+        video.addEventListener("ended", () => { if (running) finish("ended"); });
+
+        function onFrame(now, metadata) {
+            if (!running) return;
+            captureFrame(metadata ? metadata.mediaTime : video.currentTime);
+            if (running) video.requestVideoFrameCallback(onFrame);
+        }
+        function rafLoop() {
+            if (!running) return;
+            captureFrame(video.currentTime);
+            if (!video.paused && !video.ended && running) requestAnimationFrame(rafLoop);
+        }
+
+        function captureFrame(mediaTime) {
+            lastFrameAt = performance.now();
+            let result;
+            try {
+                // detection timestamp must be monotonic increasing — performance.now() is.
+                result = poseLandmarker.detectForVideo(video, performance.now());
+            } catch { return; }
+            if (!result || !result.landmarks || result.landmarks.length === 0) return;
+
+            const lm = result.landmarks[0];
+            const wl = (result.worldLandmarks && result.worldLandmarks[0]) || lm;
+            const need = [L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_WRIST, R_WRIST];
+            const visOk = need.every(i => lm[i] && (lm[i].visibility === undefined || lm[i].visibility > 0.3));
+
+            frames.push({
+                t: mediaTime,
+                wristMidY: (lm[L_WRIST].y + lm[R_WRIST].y) / 2,           // image space, y increases downward
+                shoulderAngle: planarAngle(wl[L_SHOULDER], wl[R_SHOULDER]), // rotation about vertical (world x-z)
+                hipAngle: planarAngle(wl[L_HIP], wl[R_HIP]),
+                spineAngle: spineLean(lm[L_SHOULDER], lm[R_SHOULDER], lm[L_HIP], lm[R_HIP]),
+                vis: visOk,
+            });
+            setStatus("Analyzing your swing…", `Captured ${frames.length} frames…`);
+        }
+
+        // angle of a left→right segment in the transverse (x-z) plane = turn about the spine axis
+        function planarAngle(a, b) {
+            return Math.atan2(b.z - a.z, b.x - a.x) * 180 / Math.PI;
+        }
+        // torso lean from vertical in the image plane (posture proxy)
+        function spineLean(ls, rs, lh, rh) {
+            const sx = (ls.x + rs.x) / 2, sy = (ls.y + rs.y) / 2;
+            const hx = (lh.x + rh.x) / 2, hy = (lh.y + rh.y) / 2;
+            return Math.atan2(sx - hx, -(sy - hy)) * 180 / Math.PI; // up = -y
+        }
+        function angDiff(a, b) {
+            let d = a - b;
+            while (d > 180) d -= 360;
+            while (d < -180) d += 360;
+            return d;
+        }
+        const avg = (arr) => arr.reduce((s, x) => s + x, 0) / arr.length;
+
+        // ---- Turn collected frames into metrics, then call the coach ----
+        async function finish(reason) {
+            if (!running) return;
+            running = false;
+            clearTimeout(watchdog); clearInterval(stallTimer);
+            try { video.pause(); } catch {}
+
+            const valid = frames.filter(f => f.vis);
+            if (frames.length < 12 || valid.length < 8) {
+                showError("We couldn't read your swing clearly. Re-film side-on (down-the-line), full body in frame, good lighting, 3–5 seconds — then <a href='dashboard.html'>try again</a>.");
+                return;
             }
 
-            // Indices: 11(R Shoulder), 12(L Shoulder), 23(R Hip), 24(L Hip), 15(R Wrist), 16(L Wrist)
-            // Find Top of Backswing (Max Left Wrist Y) and Impact (Min Left Wrist Y after Top)
-            let topIndex = 0;
-            let impactIndex = 0;
-            let maxWristY = -Infinity;
-            let minWristY = Infinity;
-            
-            // Assume right-handed golfer, left wrist (16) is lead wrist
-            for (let i = 0; i < data.length; i++) {
-                let wristY = data[i].landmarks[16].y;
-                if (wristY > maxWristY) {
-                    maxWristY = wristY;
-                    topIndex = i;
-                }
-            }
-
-            for (let i = topIndex; i < data.length; i++) {
-                let wristY = data[i].landmarks[16].y;
-                if (wristY < minWristY) {
-                    minWristY = wristY;
-                    impactIndex = i;
-                }
-            }
-
-            let addressIndex = Math.floor(data.length * 0.1); // First 10% of frames
-
-            function getAngle(p1, p2) {
-                return Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180.0 / Math.PI;
-            }
-
-            // 1. Shoulder Turn (Top vs Address)
-            let addressShoulderAngle = getAngle(data[addressIndex].landmarks[11], data[addressIndex].landmarks[12]);
-            let topShoulderAngle = getAngle(data[topIndex].landmarks[11], data[topIndex].landmarks[12]);
-            let shoulderTurn = Math.abs(topShoulderAngle - addressShoulderAngle);
-
-            // 2. Hip Rotation (Top vs Address)
-            let addressHipAngle = getAngle(data[addressIndex].landmarks[23], data[addressIndex].landmarks[24]);
-            let topHipAngle = getAngle(data[topIndex].landmarks[23], data[topIndex].landmarks[24]);
-            let hipRotation = Math.abs(topHipAngle - addressHipAngle);
-
-            // 3. X-Factor
-            let xFactor = shoulderTurn - hipRotation;
-
-            // 4. Spine Angle Consistency (Address vs Impact)
-            let addrSpineAngle = getAngle(
-                { x: (data[addressIndex].landmarks[11].x + data[addressIndex].landmarks[12].x)/2, y: (data[addressIndex].landmarks[11].y + data[addressIndex].landmarks[12].y)/2 },
-                { x: (data[addressIndex].landmarks[23].x + data[addressIndex].landmarks[24].x)/2, y: (data[addressIndex].landmarks[23].y + data[addressIndex].landmarks[24].y)/2 }
-            );
-            let impSpineAngle = getAngle(
-                { x: (data[impactIndex].landmarks[11].x + data[impactIndex].landmarks[12].x)/2, y: (data[impactIndex].landmarks[11].y + data[impactIndex].landmarks[12].y)/2 },
-                { x: (data[impactIndex].landmarks[23].x + data[impactIndex].landmarks[24].x)/2, y: (data[impactIndex].landmarks[23].y + data[impactIndex].landmarks[24].y)/2 }
-            );
-            let spineAngleChange = Math.abs(impSpineAngle - addrSpineAngle);
-
-            // 5. Tempo Ratio (Frames address->top) / (Frames top->impact)
-            let backswingFrames = topIndex - addressIndex;
-            let downswingFrames = impactIndex - topIndex;
-            let tempoRatio = downswingFrames > 0 ? (backswingFrames / downswingFrames).toFixed(2) : 0;
-
-            const metrics = {
-                shoulder_turn: Math.round(shoulderTurn),
-                hip_rotation: Math.round(hipRotation),
-                x_factor: Math.round(xFactor),
-                spine_angle_change: Math.round(spineAngleChange),
-                tempo_ratio: tempoRatio
+            // Address = average of the first few valid frames (clip is assumed to start at setup).
+            const head = valid.slice(0, 5);
+            const addr = {
+                shoulder: avg(head.map(f => f.shoulderAngle)),
+                hip: avg(head.map(f => f.hipAngle)),
+                spine: avg(head.map(f => f.spineAngle)),
+                wristY: avg(head.map(f => f.wristMidY)),
+                t: head[0].t,
             };
 
-            await sendToLLM(metrics);
-        }
+            // Top of backswing = hands highest = minimum wristMidY.
+            let topIdx = -1, topY = Infinity;
+            for (let i = 3; i < valid.length; i++) {
+                if (valid[i].wristMidY < topY) { topY = valid[i].wristMidY; topIdx = i; }
+            }
+            if (topIdx < 0 || (addr.wristY - topY) < 0.05) {
+                showError("We couldn't detect a backswing. Make sure the whole swing (setup through finish) is in the clip, filmed side-on, and <a href='dashboard.html'>try again</a>.");
+                return;
+            }
+            const top = valid[topIdx];
 
-        async function sendToLLM(metrics) {
+            // Impact ≈ fastest downward wrist motion after the top.
+            let impIdx = topIdx, maxV = -Infinity;
+            for (let i = topIdx + 1; i < valid.length; i++) {
+                const v = valid[i].wristMidY - valid[i - 1].wristMidY; // +ve = moving down
+                if (v > maxV) { maxV = v; impIdx = i; }
+            }
+            const imp = valid[impIdx];
+
+            const metrics = {
+                shoulder_turn: Math.round(Math.abs(angDiff(top.shoulderAngle, addr.shoulder))),
+                hip_rotation: Math.round(Math.abs(angDiff(top.hipAngle, addr.hip))),
+                spine_angle_change: Math.round(angDiff(imp.spineAngle, addr.spine)),
+            };
+            metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
+            const back = top.t - addr.t, down = imp.t - top.t;
+            metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
+
+            renderMetrics(metrics);
+            setStatus("Generating your report…", "Sending your swing metrics to your AI coach.");
+
             try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ metrics: metrics })
+                const r = await fetch("/api/analyze", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ metrics }),
                 });
-
-                const responseText = await response.text();
-                let data;
-                try { data = JSON.parse(responseText); } catch (e) {
-                    throw new Error("Backend returned HTML instead of JSON. Error: " + responseText.substring(0, 500));
-                }
-
-                if (!response.ok) throw new Error(data.error || "Backend failed.");
-                
-                const sections = data.text.split(/SUMMARY:|FLAWS:|DRILLS:/i);
-                document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
-                document.getElementById('flawsText').innerHTML = sections[2] || "<p>No flaws detected.</p>";
-                document.getElementById('drillsText').innerHTML = sections[3] || "<p>No drills available.</p>";
-
-                loader.style.display = 'none';
-                document.getElementById('summaryCard').style.display = 'block';
-                document.getElementById('flawsCard').style.display = 'block';
-                document.getElementById('drillsCard').style.display = 'block';
-            } catch (error) {
-                showError(`Error: ${error.message}`);
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || "Analysis failed");
+                renderReport(data);
+            } catch (err) {
+                loader.style.display = "none";
+                errorBox.style.display = "block";
+                errorBox.innerHTML = "Your swing was measured (see the numbers above), but the AI coach is unavailable right now: " + err.message;
             }
         }
 
-        function showError(msg) {
-            loader.style.display = 'none';
-            const errBox = document.getElementById('errorBox');
-            errBox.innerText = msg;
-            errBox.style.display = 'block';
+        function renderMetrics(m) {
+            const items = [
+                [m.tempo_ratio + " : 1", "Tempo"],
+                [m.shoulder_turn + "°", "Shoulder turn"],
+                [m.hip_rotation + "°", "Hip turn"],
+                [m.x_factor + "°", "X-Factor"],
+                [m.spine_angle_change + "°", "Spine change"],
+            ];
+            const strip = $("metricsStrip");
+            strip.innerHTML = items.map(([v, l]) => `<div class="metric"><div class="val">${v}</div><div class="lbl">${l}</div></div>`).join("");
+            strip.style.display = "flex";
+        }
+
+        function renderReport(data) {
+            loader.style.display = "none";
+            video.style.display = "none";
+            $("summaryText").innerHTML = data.summary ? `<p>${data.summary}</p>` : "<p>—</p>";
+            $("flawsText").innerHTML = listHtml(data.flaws);
+            $("drillsText").innerHTML = listHtml(data.drills);
+            $("summaryCard").style.display = "block";
+            $("flawsCard").style.display = "block";
+            $("drillsCard").style.display = "block";
+        }
+        function listHtml(arr) {
+            if (Array.isArray(arr) && arr.length) return "<ul>" + arr.map(x => `<li>${x}</li>`).join("") + "</ul>";
+            if (typeof arr === "string" && arr.trim()) return `<p>${arr}</p>`;
+            return "<p>—</p>";
         }
     </script>
 </body>
