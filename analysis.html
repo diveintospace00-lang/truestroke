@@ -28,6 +28,8 @@
         .report-card p, .report-card li { color: var(--text-gray); line-height: 1.8; }
         .error-box { background: #fff3f3; color: #b00020; padding: 24px; border-radius: 8px; display: none; text-align: left; line-height: 1.7; }
         .error-box a { color: var(--forest-green); font-weight: 600; }
+        #debugLog { display: none; text-align: left; background: #0e1f1b; color: #9fe3c5; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; line-height: 1.5; padding: 16px; border-radius: 8px; margin-top: 20px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto; }
+        #debugLabel { display: none; font-size: 0.78rem; color: var(--text-gray); margin-top: 24px; text-transform: uppercase; letter-spacing: 0.5px; }
     </style>
 </head>
 <body>
@@ -50,20 +52,54 @@
             <div class="report-card" id="flawsCard"><h2>⚠️ Critical Flaws Detected</h2><div id="flawsText"></div></div>
             <div class="report-card" id="drillsCard"><h2>🎯 Your Custom Drill Plan</h2><div id="drillsText"></div></div>
         </div>
+
+        <div id="debugLabel">Diagnostic log</div>
+        <pre id="debugLog"></pre>
     </div>
+
+    <!-- Classic (non-module) script: catches errors even if the module below fails to load.
+         A failed MediaPipe import is invisible otherwise and looks exactly like "stuck on Initializing". -->
+    <script>
+        window.__log = function (msg) {
+            var el = document.getElementById('debugLog');
+            var lbl = document.getElementById('debugLabel');
+            if (el) {
+                el.style.display = 'block';
+                if (lbl) lbl.style.display = 'block';
+                var t = new Date().toLocaleTimeString();
+                el.textContent += '[' + t + '] ' + msg + '\n';
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+        window.addEventListener('error', function (e) {
+            window.__log('ERROR: ' + (e.message || e.error) + (e.filename ? '  (' + e.filename + ')' : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            var r = e.reason; window.__log('UNHANDLED REJECTION: ' + (r && r.message ? r.message : r));
+        });
+        // If the module never even runs (import/CDN failure), this fires.
+        window.__moduleStarted = false;
+        setTimeout(function () {
+            if (!window.__moduleStarted) {
+                window.__log('Module script never started — the MediaPipe import likely failed (CDN/network/region or wrong path).');
+            }
+        }, 6000);
+    </script>
 
     <script type="module">
         import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+        window.__moduleStarted = true;
+        const log = (m) => window.__log && window.__log(m);
+        log('Module loaded ✓');
 
         const $ = (id) => document.getElementById(id);
         const loader = $("loader"), statusTitle = $("statusTitle"), statusText = $("statusText");
         const video = $("hiddenVideo"), startBtn = $("startBtn"), errorBox = $("errorBox");
 
-        // Lite model + GPU delegate = fast on phones. (Heavy model on CPU is the usual cause of slow/hanging analysis.)
         const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
         const WASM_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 
-        // MediaPipe BlazePose landmark indices
         const L_SHOULDER = 11, R_SHOULDER = 12, L_WRIST = 15, R_WRIST = 16, L_HIP = 23, R_HIP = 24;
 
         let poseLandmarker = null;
@@ -71,12 +107,14 @@
         let running = false;
         let lastFrameAt = 0;
         let watchdog = null, stallTimer = null;
+        let errorShown = false;
 
         function setStatus(title, text) {
             statusTitle.textContent = title;
             if (text !== undefined) statusText.textContent = text;
         }
         function showError(html) {
+            errorShown = true;
             running = false;
             clearTimeout(watchdog); clearInterval(stallTimer);
             loader.style.display = "none";
@@ -85,67 +123,111 @@
             errorBox.style.display = "block";
             errorBox.innerHTML = html;
         }
+        function withTimeout(promise, ms, label) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out after ' + (ms / 1000) + 's')), ms)),
+            ]);
+        }
 
-        // ---- Read the uploaded video URL ----
         const videoUrl = new URLSearchParams(location.search).get("video");
 
-        // ---- Init the engine ONCE, in parallel with loading the video ----
         async function init() {
             if (!videoUrl) {
                 showError("No swing video was provided. Please <a href='dashboard.html'>upload a swing</a> first.");
                 return;
             }
+            log('Video URL: ' + videoUrl.slice(0, 60) + '…');
+
+            // --- Phase A: WASM runtime ---
+            let fileset;
             try {
-                const fileset = await FilesetResolver.forVisionTasks(WASM_PATH);
-                poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
-                    baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-                    runningMode: "VIDEO",
-                    numPoses: 1,
-                });
+                setStatus("Initializing…", "Loading the AI engine (1/3: runtime)…");
+                log('Loading WASM fileset…');
+                fileset = await withTimeout(FilesetResolver.forVisionTasks(WASM_PATH), 20000, 'WASM runtime');
+                log('WASM runtime ✓');
             } catch (err) {
-                showError("Couldn't start the AI engine: " + err.message + "<br>Try reloading on a recent version of Chrome or Safari.");
+                log('WASM FAILED: ' + err.message);
+                showError("Couldn't load the AI runtime: " + err.message + "<br>This is usually a network or CDN issue. Check your connection and reload.");
                 return;
             }
 
-            // crossOrigin must be set BEFORE src so MediaPipe can read pixels from the
-            // Supabase-hosted video without tainting (otherwise pose detection fails).
+            // --- Phase B: pose model, GPU then CPU fallback ---
+            const makeLandmarker = (delegate) => PoseLandmarker.createFromOptions(fileset, {
+                baseOptions: { modelAssetPath: MODEL_URL, delegate },
+                runningMode: "VIDEO",
+                numPoses: 1,
+            });
+            try {
+                setStatus("Initializing…", "Loading the AI engine (2/3: model, GPU)…");
+                log('Creating pose model on GPU…');
+                poseLandmarker = await withTimeout(makeLandmarker("GPU"), 12000, 'Model (GPU)');
+                log('Pose model ✓ (GPU)');
+            } catch (gpuErr) {
+                log('GPU path failed (' + gpuErr.message + ') — falling back to CPU…');
+                try {
+                    setStatus("Initializing…", "Loading the AI engine (2/3: model, CPU)…");
+                    poseLandmarker = await withTimeout(makeLandmarker("CPU"), 25000, 'Model (CPU)');
+                    log('Pose model ✓ (CPU)');
+                } catch (cpuErr) {
+                    log('CPU path also failed: ' + cpuErr.message);
+                    showError("Couldn't start the pose model: " + cpuErr.message + "<br>Try a recent Chrome or Safari, and reload.");
+                    return;
+                }
+            }
+
+            // --- Phase C: load the video ---
+            setStatus("Initializing…", "Loading your video (3/3)…");
+            log('Loading video element…');
             video.crossOrigin = "anonymous";
             video.src = videoUrl;
 
+            let videoReady = false;
             video.addEventListener("loadeddata", () => {
+                videoReady = true;
+                log('Video loaded ✓ (duration: ' + (isFinite(video.duration) ? video.duration.toFixed(1) + 's' : 'unknown') + ')');
                 loader.style.display = "none";
                 video.style.display = "block";
                 startBtn.style.display = "inline-block";
+                setStatus("Ready", "Tap below to analyze your swing.");
             }, { once: true });
 
             video.addEventListener("error", () => {
-                showError("Couldn't load the video. If it was just uploaded, wait a few seconds and refresh. (The storage bucket must be public and allow cross-origin reads.)");
+                const err = video.error;
+                log('VIDEO ERROR: code ' + (err ? err.code : '?') + ' — ' + (err ? err.message : 'unknown'));
+                showError("Couldn't load the video. Two common causes:<br>• The storage bucket isn't public / doesn't allow cross-origin reads.<br>• The clip is an iPhone HEVC <code>.mov</code> this browser can't decode — try recording in “Most Compatible” mode, or upload an MP4.");
             }, { once: true });
+
+            // Catch the silent case: neither event fires.
+            setTimeout(() => {
+                if (!videoReady && !errorShown) {
+                    log('Video load timed out (no loadeddata, no error).');
+                    showError("Your video didn't load in time. This is almost always a CORS issue (the bucket must be public) or an unsupported video format (try an MP4 instead of an iPhone .mov).");
+                }
+            }, 15000);
         }
         init();
 
-        // ---- User taps to start: this gesture is required for iOS playback ----
         startBtn.addEventListener("click", async () => {
             if (!poseLandmarker || running) return;
             startBtn.style.display = "none";
             loader.style.display = "block";
             setStatus("Analyzing your swing…", "Tracking your body through the swing — keep this tab open.");
+            log('Analysis started.');
             frames = [];
             running = true;
 
             try {
                 video.currentTime = 0;
-                await video.play();   // video stays visible so frames actually render
+                await video.play();
             } catch (err) {
+                log('play() rejected: ' + err.message);
                 showError("Couldn't start playback. Tap the video once to start it, then re-run.");
                 return;
             }
 
-            // Hard stop so it can never hang forever (iOS 'ended' is unreliable).
             const maxMs = (isFinite(video.duration) ? video.duration * 1000 : 8000) + 4000;
             watchdog = setTimeout(() => finish("watchdog"), maxMs);
-
-            // Stall guard: if no new frame arrives for 1.5s, wrap up.
             lastFrameAt = performance.now();
             stallTimer = setInterval(() => {
                 if (running && performance.now() - lastFrameAt > 1500) finish("stall");
@@ -154,7 +236,8 @@
             if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
                 video.requestVideoFrameCallback(onFrame);
             } else {
-                rafLoop(); // Firefox / older browsers
+                log('requestVideoFrameCallback unavailable — using rAF fallback.');
+                rafLoop();
             }
         });
 
@@ -175,7 +258,6 @@
             lastFrameAt = performance.now();
             let result;
             try {
-                // detection timestamp must be monotonic increasing — performance.now() is.
                 result = poseLandmarker.detectForVideo(video, performance.now());
             } catch { return; }
             if (!result || !result.landmarks || result.landmarks.length === 0) return;
@@ -187,8 +269,8 @@
 
             frames.push({
                 t: mediaTime,
-                wristMidY: (lm[L_WRIST].y + lm[R_WRIST].y) / 2,           // image space, y increases downward
-                shoulderAngle: planarAngle(wl[L_SHOULDER], wl[R_SHOULDER]), // rotation about vertical (world x-z)
+                wristMidY: (lm[L_WRIST].y + lm[R_WRIST].y) / 2,
+                shoulderAngle: planarAngle(wl[L_SHOULDER], wl[R_SHOULDER]),
                 hipAngle: planarAngle(wl[L_HIP], wl[R_HIP]),
                 spineAngle: spineLean(lm[L_SHOULDER], lm[R_SHOULDER], lm[L_HIP], lm[R_HIP]),
                 vis: visOk,
@@ -196,30 +278,21 @@
             setStatus("Analyzing your swing…", `Captured ${frames.length} frames…`);
         }
 
-        // angle of a left→right segment in the transverse (x-z) plane = turn about the spine axis
-        function planarAngle(a, b) {
-            return Math.atan2(b.z - a.z, b.x - a.x) * 180 / Math.PI;
-        }
-        // torso lean from vertical in the image plane (posture proxy)
+        function planarAngle(a, b) { return Math.atan2(b.z - a.z, b.x - a.x) * 180 / Math.PI; }
         function spineLean(ls, rs, lh, rh) {
             const sx = (ls.x + rs.x) / 2, sy = (ls.y + rs.y) / 2;
             const hx = (lh.x + rh.x) / 2, hy = (lh.y + rh.y) / 2;
-            return Math.atan2(sx - hx, -(sy - hy)) * 180 / Math.PI; // up = -y
+            return Math.atan2(sx - hx, -(sy - hy)) * 180 / Math.PI;
         }
-        function angDiff(a, b) {
-            let d = a - b;
-            while (d > 180) d -= 360;
-            while (d < -180) d += 360;
-            return d;
-        }
+        function angDiff(a, b) { let d = a - b; while (d > 180) d -= 360; while (d < -180) d += 360; return d; }
         const avg = (arr) => arr.reduce((s, x) => s + x, 0) / arr.length;
 
-        // ---- Turn collected frames into metrics, then call the coach ----
         async function finish(reason) {
             if (!running) return;
             running = false;
             clearTimeout(watchdog); clearInterval(stallTimer);
             try { video.pause(); } catch {}
+            log('Analysis finished (' + reason + '). Total frames: ' + frames.length);
 
             const valid = frames.filter(f => f.vis);
             if (frames.length < 12 || valid.length < 8) {
@@ -227,7 +300,6 @@
                 return;
             }
 
-            // Address = average of the first few valid frames (clip is assumed to start at setup).
             const head = valid.slice(0, 5);
             const addr = {
                 shoulder: avg(head.map(f => f.shoulderAngle)),
@@ -237,7 +309,6 @@
                 t: head[0].t,
             };
 
-            // Top of backswing = hands highest = minimum wristMidY.
             let topIdx = -1, topY = Infinity;
             for (let i = 3; i < valid.length; i++) {
                 if (valid[i].wristMidY < topY) { topY = valid[i].wristMidY; topIdx = i; }
@@ -248,10 +319,9 @@
             }
             const top = valid[topIdx];
 
-            // Impact ≈ fastest downward wrist motion after the top.
             let impIdx = topIdx, maxV = -Infinity;
             for (let i = topIdx + 1; i < valid.length; i++) {
-                const v = valid[i].wristMidY - valid[i - 1].wristMidY; // +ve = moving down
+                const v = valid[i].wristMidY - valid[i - 1].wristMidY;
                 if (v > maxV) { maxV = v; impIdx = i; }
             }
             const imp = valid[impIdx];
@@ -264,6 +334,7 @@
             metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
             const back = top.t - addr.t, down = imp.t - top.t;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
+            log('Metrics: ' + JSON.stringify(metrics));
 
             renderMetrics(metrics);
             setStatus("Generating your report…", "Sending your swing metrics to your AI coach.");
@@ -278,9 +349,10 @@
                 if (!r.ok) throw new Error(data.error || "Analysis failed");
                 renderReport(data);
             } catch (err) {
+                log('LLM call failed: ' + err.message);
                 loader.style.display = "none";
                 errorBox.style.display = "block";
-                errorBox.innerHTML = "Your swing was measured (see the numbers above), but the AI coach is unavailable right now: " + err.message;
+                errorBox.innerHTML = "Your swing was measured (numbers above), but the AI coach is unavailable right now: " + err.message;
             }
         }
 
@@ -296,7 +368,6 @@
             strip.innerHTML = items.map(([v, l]) => `<div class="metric"><div class="val">${v}</div><div class="lbl">${l}</div></div>`).join("");
             strip.style.display = "flex";
         }
-
         function renderReport(data) {
             loader.style.display = "none";
             video.style.display = "none";
