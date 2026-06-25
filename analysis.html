@@ -176,35 +176,47 @@
                 }
             }
 
-            // --- Phase C: load the video ---
-            setStatus("Initializing…", "Loading your video (3/3)…");
-            log('Loading video element…');
-            video.crossOrigin = "anonymous";
-            video.src = videoUrl;
+            // --- Phase C: download the clip as a same-origin BLOB ---
+            // Why not just set video.src = url? On iOS, Safari won't load remote
+            // video until a user gesture, so loadeddata never fires and the page
+            // hangs. Downloading to a blob makes the data local (loads immediately,
+            // no gesture needed) AND same-origin (no canvas tainting for MediaPipe).
+            setStatus("Initializing…", "Downloading your video (3/3)…");
+            log('Fetching video as blob…');
+            let blobUrl;
+            try {
+                const resp = await withTimeout(fetch(videoUrl), 25000, 'Video download');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const blob = await resp.blob();
+                log('Video downloaded ✓ (' + (blob.size / 1048576).toFixed(1) + ' MB, type: ' + (blob.type || 'unknown') + ')');
+                blobUrl = URL.createObjectURL(blob);
+            } catch (err) {
+                log('Video fetch FAILED: ' + err.message);
+                showError("Couldn't download your video for analysis: " + err.message + "<br>If this mentions CORS, the storage bucket must be public. Otherwise check the connection and retry.");
+                return;
+            }
 
+            video.src = blobUrl;
             let videoReady = false;
-            video.addEventListener("loadeddata", () => {
+            const markReady = () => {
+                if (videoReady || errorShown) return;
                 videoReady = true;
-                log('Video loaded ✓ (duration: ' + (isFinite(video.duration) ? video.duration.toFixed(1) + 's' : 'unknown') + ')');
+                log('Video ready ✓ (duration: ' + (isFinite(video.duration) ? video.duration.toFixed(1) + 's' : 'unknown') + ')');
                 loader.style.display = "none";
                 video.style.display = "block";
                 startBtn.style.display = "inline-block";
                 setStatus("Ready", "Tap below to analyze your swing.");
-            }, { once: true });
-
+            };
+            video.addEventListener("loadedmetadata", markReady, { once: true });
+            video.addEventListener("loadeddata", markReady, { once: true });
             video.addEventListener("error", () => {
-                const err = video.error;
-                log('VIDEO ERROR: code ' + (err ? err.code : '?') + ' — ' + (err ? err.message : 'unknown'));
-                showError("Couldn't load the video. Two common causes:<br>• The storage bucket isn't public / doesn't allow cross-origin reads.<br>• The clip is an iPhone HEVC <code>.mov</code> this browser can't decode — try recording in “Most Compatible” mode, or upload an MP4.");
+                const e = video.error;
+                log('VIDEO ERROR: code ' + (e ? e.code : '?'));
+                showError("Couldn't read the downloaded video. This browser may not decode the clip's format. Recording on the same phone you're viewing from avoids this.");
             }, { once: true });
-
-            // Catch the silent case: neither event fires.
-            setTimeout(() => {
-                if (!videoReady && !errorShown) {
-                    log('Video load timed out (no loadeddata, no error).');
-                    showError("Your video didn't load in time. This is almost always a CORS issue (the bucket must be public) or an unsupported video format (try an MP4 instead of an iPhone .mov).");
-                }
-            }, 15000);
+            video.load();
+            // Blob is local, so even if iOS sits on the events, it's safe to reveal the button.
+            setTimeout(markReady, 2500);
         }
         init();
 
@@ -216,6 +228,8 @@
             log('Analysis started.');
             frames = [];
             running = true;
+            let firstFrameSeen = false;
+            window.__firstFrame = () => { firstFrameSeen = true; };
 
             try {
                 video.currentTime = 0;
@@ -230,7 +244,7 @@
             watchdog = setTimeout(() => finish("watchdog"), maxMs);
             lastFrameAt = performance.now();
             stallTimer = setInterval(() => {
-                if (running && performance.now() - lastFrameAt > 1500) finish("stall");
+                if (running && firstFrameSeen && performance.now() - lastFrameAt > 1500) finish("stall");
             }, 500);
 
             if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
@@ -275,6 +289,7 @@
                 spineAngle: spineLean(lm[L_SHOULDER], lm[R_SHOULDER], lm[L_HIP], lm[R_HIP]),
                 vis: visOk,
             });
+            if (window.__firstFrame) window.__firstFrame();
             setStatus("Analyzing your swing…", `Captured ${frames.length} frames…`);
         }
 
