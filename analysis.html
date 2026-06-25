@@ -32,7 +32,7 @@
         <div class="loader" id="loader">
             <div class="spinner"></div>
             <h2>TrueStroke AI is analyzing your swing...</h2>
-            <p style="color: var(--text-gray);">Checking spine angle, club path, and weight transfer.</p>
+            <p style="color: var(--text-gray);">Extracting 6 frames and checking spine angle.</p>
         </div>
 
         <div class="error-box" id="errorBox"></div>
@@ -46,75 +46,87 @@
     </div>
 
     <script>
-        // ==========================================
-        // PASTE YOUR GEMINI API KEY HERE
-        // It should look like: 'AIzaSy...'
-        const GEMINI_API_KEY = 'AIzaSyDGzhlE65YtqBBBr8Ux-RxgCwDYXE2KvlzM';
-        // ==========================================
-
         const urlParams = new URLSearchParams(window.location.search);
         const videoUrl = urlParams.get('video');
-        const videoMime = urlParams.get('mime') || 'video/mp4';
 
         async function analyzeSwing() {
             if (!videoUrl) {
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('errorBox').innerText = "No video found. Please upload a video first.";
-                document.getElementById('errorBox').style.display = 'block';
+                showError("No video found. Please upload a video first.");
                 return;
             }
 
-            const prompt = "You are an expert PGA golf coach. Analyze this golf swing video. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
-
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
-
-            const requestBody = {
-                contents: [{
-                    parts: [
-                        { text: prompt },
-                        { file_data: { file_uri: videoUrl, mime_type: videoMime } }
-                    ]
-                }]
-            };
-
             try {
-                const response = await fetch(apiUrl, {
+                // 1. Load video secretly in the browser to grab frames
+                const video = document.createElement('video');
+                video.src = videoUrl;
+                video.crossOrigin = "anonymous";
+                await new Promise((resolve, reject) => {
+                    video.onloadedmetadata = resolve;
+                    video.onerror = reject;
+                });
+
+                const frames = [];
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Grab 6 frames at 10%, 25%, 40%, 55%, 70%, and 85% through the video
+                const timestamps = [
+                    video.duration * 0.10, 
+                    video.duration * 0.25, 
+                    video.duration * 0.40, 
+                    video.duration * 0.55, 
+                    video.duration * 0.70, 
+                    video.duration * 0.85
+                ];
+
+                for (let i = 0; i < timestamps.length; i++) {
+                    video.currentTime = timestamps[i];
+                    await new Promise(resolve => video.onseeked = resolve);
+                    
+                    // Make image 400px wide to keep the payload size small for Vercel
+                    canvas.width = 400;
+                    canvas.height = 400 * (video.videoHeight / video.videoWidth);
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    
+                    // Convert to compressed base64 JPEG
+                    frames.push(canvas.toDataURL('image/jpeg', 0.5));
+                }
+
+                // 2. Send frames to our Node.js backend
+                const response = await fetch('/api/analyze', {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-goog-api-key': GEMINI_API_KEY // Passing key in header
-                    },
-                    body: JSON.stringify(requestBody)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ frames: frames })
                 });
 
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.error?.message || "API request failed");
+                    throw new Error(data.error || "Backend failed to analyze video.");
                 }
 
-                if (data.candidates && data.candidates.length > 0) {
-                    const aiText = data.candidates[0].content.parts[0].text;
-                    const sections = aiText.split(/SUMMARY:|FLAWS:|DRILLS:/i);
-                    
-                    document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
-                    document.getElementById('flawsText').innerHTML = sections[2] || "<p>No flaws detected.</p>";
-                    document.getElementById('drillsText').innerHTML = sections[3] || "<p>No drills available.</p>";
+                // 3. Display the result
+                const sections = data.text.split(/SUMMARY:|FLAWS:|DRILLS:/i);
+                
+                document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
+                document.getElementById('flawsText').innerHTML = sections[2] || "<p>No flaws detected.</p>";
+                document.getElementById('drillsText').innerHTML = sections[3] || "<p>No drills available.</p>";
 
-                    document.getElementById('loader').style.display = 'none';
-                    document.getElementById('summaryCard').style.display = 'block';
-                    document.getElementById('flawsCard').style.display = 'block';
-                    document.getElementById('drillsCard').style.display = 'block';
-                    document.getElementById('ctaBox').style.display = 'block';
-                } else {
-                    throw new Error("AI could not analyze this video. Try a different angle or a clearer video.");
-                }
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('summaryCard').style.display = 'block';
+                document.getElementById('flawsCard').style.display = 'block';
+                document.getElementById('drillsCard').style.display = 'block';
+                document.getElementById('ctaBox').style.display = 'block';
 
             } catch (error) {
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('errorBox').innerText = `Error: ${error.message}`;
-                document.getElementById('errorBox').style.display = 'block';
+                showError(`Error: ${error.message}`);
             }
+        }
+
+        function showError(msg) {
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('errorBox').innerText = msg;
+            document.getElementById('errorBox').style.display = 'block';
         }
 
         analyzeSwing();
