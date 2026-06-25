@@ -4,33 +4,20 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { frames } = req.body; // Now receiving 6 images
+        const { frames } = req.body; 
 
         const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-        const prompt = "You are an expert PGA golf coach. I am providing 6 sequential frames from a golf swing video (setup, takeaway, top of swing, transition, impact, follow-through). Analyze the swing mechanics. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
+        const prompt = "You are an expert PGA golf coach. I am providing 4 sequential frames from a golf swing video (setup, top of swing, impact, follow-through). Analyze the swing mechanics. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
 
-        // Build the content array with all 6 frames
-        const contentArray = [
-            { type: "text", text: prompt }
-        ];
-
+        const contentArray = [{ type: "text", text: prompt }];
         for (let i = 0; i < frames.length; i++) {
-            contentArray.push({
-                type: "image_url",
-                image_url: { url: frames[i] }
-            });
+            contentArray.push({ type: "image_url", image_url: { url: frames[i] } });
         }
 
         const messages = [
-            {
-                role: "system",
-                content: "You are an expert PGA golf coach."
-            },
-            {
-                role: "user",
-                content: contentArray
-            }
+            { role: "system", content: "You are an expert PGA golf coach." },
+            { role: "user", content: contentArray }
         ];
 
         const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
