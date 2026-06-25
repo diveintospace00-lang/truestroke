@@ -1,47 +1,61 @@
+const { GoogleAuth } = require('google-auth-library');
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
     try {
-        const { frames } = req.body; 
+        const { videoUrl } = req.body;
 
-        const GROQ_API_KEY = process.env.GROQ_API_KEY;
+        // 1. Parse the Service Account JSON from Vercel Environment Variables
+        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+        const projectId = credentials.project_id;
 
-        const prompt = "You are an expert PGA golf coach. I am providing 4 sequential frames from a golf swing video (setup, top of swing, impact, follow-through). Analyze the swing mechanics. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
+        // 2. Authenticate using the Service Account
+        const auth = new GoogleAuth({
+            credentials,
+            scopes: 'https://www.googleapis.com/auth/cloud-platform'
+        });
+        const client = await auth.getClient();
+        const tokenResponse = await client.getAccessToken();
+        const accessToken = tokenResponse.token;
 
-        const contentArray = [{ type: "text", text: prompt }];
-        for (let i = 0; i < frames.length; i++) {
-            contentArray.push({ type: "image_url", image_url: { url: frames[i] } });
-        }
+        // 3. Call Gemini 1.5 Flash via the Vertex AI Endpoint (This is the fix!)
+        const prompt = "You are an expert PGA golf coach. Analyze this golf swing video. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
 
-        const messages = [
-            { role: "user", content: contentArray }
-        ];
+        const apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const requestBody = {
+            contents: [{
+                role: "user",
+                parts: [
+                    { text: prompt },
+                    { file_data: { file_uri: videoUrl, mime_type: "video/mp4" } }
+                ]
+            }]
+        };
+
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${GROQ_API_KEY}`
+                'Authorization': `Bearer ${accessToken}`
             },
-            body: JSON.stringify({
-                model: "llama-3.2-90b-vision-preview",
-                messages: messages
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.error?.message || "Groq API request failed");
+            throw new Error(data.error?.message || "Vertex AI request failed");
         }
 
-        if (data.choices && data.choices.length > 0) {
-            const aiText = data.choices[0].message.content;
+        if (data.candidates && data.candidates.length > 0) {
+            const aiText = data.candidates[0].content.parts[0].text;
             res.status(200).json({ text: aiText });
         } else {
-            throw new Error("AI could not analyze this swing.");
+            throw new Error("AI could not analyze this video.");
         }
 
     } catch (error) {
