@@ -56,38 +56,25 @@
             }
 
             try {
-                // 1. Load video secretly in the browser to grab frames
+                // 1. Load video secretly in the browser
                 const video = document.createElement('video');
                 video.src = videoUrl;
                 video.crossOrigin = "anonymous";
-                // Crucial mobile fixes:
                 video.muted = true;
                 video.playsInline = true;
-                video.preload = 'auto';
                 
                 await new Promise((resolve, reject) => {
                     video.onloadeddata = resolve;
                     video.onerror = reject;
                 });
 
-                // Fix for iOS Infinity Duration bug
-                if (video.duration === Infinity) {
-                    video.currentTime = 1e101;
-                    await new Promise(resolve => video.ontimeupdate = resolve);
-                    video.currentTime = 0;
-                }
-
                 const frames = [];
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 
-                // Grab 4 frames: 10%, 30%, 50%, 70% through the video
-                const timestamps = [
-                    video.duration * 0.10, 
-                    video.duration * 0.30, 
-                    video.duration * 0.50, 
-                    video.duration * 0.70
-                ];
+                // Hardcoded timestamps to bypass iOS Infinity bug
+                // Grabs frames at 0.1s, 0.4s, 0.7s, and 1.0s
+                const timestamps = [0.1, 0.4, 0.7, 1.0];
 
                 for (let i = 0; i < timestamps.length; i++) {
                     video.currentTime = timestamps[i];
