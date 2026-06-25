@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleAuth } = require('google-auth-library');
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -8,21 +8,50 @@ export default async function handler(req, res) {
     try {
         const { videoUrl } = req.body;
 
-        // We will use standard API key here for now, but in Vercel Environment Variables
-        // For Service accounts, we'd use google-auth-library. Let's start with a standard key env var.
-        const API_KEY = process.env.GEMINI_API_KEY; 
-        const genAI = new GoogleGenerativeAI(API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // 1. Authenticate using the Service Account JSON we will put in Vercel
+        const auth = new GoogleAuth({
+            credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+            scopes: 'https://www.googleapis.com/auth/cloud-platform'
+        });
+        const client = await auth.getClient();
+        const accessToken = (await client.getAccessToken()).token;
 
+        // 2. Call Gemini 1.5 Flash with the prompt
         const prompt = "You are an expert PGA golf coach. Analyze this golf swing video. Provide a brief summary, list 2 critical flaws, and provide 2 specific drills to fix them. Format your response EXACTLY like this, using HTML tags:\n\nSUMMARY:\n<p>your summary here</p>\n\nFLAWS:\n<ul><li>flaw 1</li><li>flaw 2</li></ul>\n\nDRILLS:\n<ul><li>drill 1</li><li>drill 2</li></ul>";
 
-        const result = await model.generateContent([
-            prompt,
-            { fileData: { fileUri: videoUrl, mimeType: "video/mp4" } }
-        ]);
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
 
-        const aiText = result.response.text();
-        res.status(200).json({ text: aiText });
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: prompt },
+                    { file_data: { file_uri: videoUrl, mime_type: "video/mp4" } }
+                ]
+            }]
+        };
+
+        // 3. Make the request to Google
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error?.message || "Gemini API request failed");
+        }
+
+        if (data.candidates && data.candidates.length > 0) {
+            const aiText = data.candidates[0].content.parts[0].text;
+            res.status(200).json({ text: aiText });
+        } else {
+            throw new Error("AI could not analyze this video. Try a different angle or a clearer video.");
+        }
 
     } catch (error) {
         console.error(error);
