@@ -32,7 +32,7 @@
         <div class="loader" id="loader">
             <div class="spinner"></div>
             <h2>TrueStroke AI is analyzing your swing...</h2>
-            <p style="color: var(--text-gray);">Extracting frames and checking spine angle.</p>
+            <p style="color: var(--text-gray);">Checking spine angle, club path, and weight transfer.</p>
         </div>
 
         <div class="error-box" id="errorBox"></div>
@@ -56,68 +56,11 @@
             }
 
             try {
-                // 1. Load video visibly in DOM (Mobile Safari requires this)
-                const video = document.createElement('video');
-                video.src = videoUrl;
-                video.crossOrigin = "anonymous";
-                video.muted = true;
-                video.playsInline = true;
-                video.style.position = 'absolute';
-                video.style.width = '1px'; // invisible but physically on page
-                video.style.height = '1px';
-                video.style.opacity = '0';
-                document.body.appendChild(video);
-                
-                await new Promise((resolve, reject) => {
-                    video.onloadeddata = resolve;
-                    video.onerror = reject;
-                });
-
-                // Fix iOS Infinity bug safely
-                if (video.duration === Infinity || isNaN(video.duration)) {
-                    video.currentTime = 1e101;
-                    await new Promise(resolve => video.ontimeupdate = resolve);
-                    video.currentTime = 0;
-                }
-
-                let duration = video.duration;
-                if (isNaN(duration) || duration === 0) duration = 3; // Safe fallback
-
-                const frames = [];
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                const timestamps = [
-                    duration * 0.1, 
-                    duration * 0.3, 
-                    duration * 0.5, 
-                    duration * 0.7
-                ];
-
-                for (let i = 0; i < timestamps.length; i++) {
-                    video.currentTime = timestamps[i];
-                    
-                    // The Fail-Safe: Wait for seek, but give up after 2 seconds so it NEVER hangs forever
-                    await Promise.race([
-                        new Promise(resolve => video.onseeked = resolve),
-                        new Promise(resolve => setTimeout(resolve, 2000))
-                    ]);
-                    
-                    canvas.width = 400;
-                    canvas.height = 400 * (video.videoHeight / video.videoWidth);
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    
-                    frames.push(canvas.toDataURL('image/jpeg', 0.5));
-                }
-
-                // Clean up the hidden video element
-                video.remove();
-
-                // 2. Send frames to our Node.js backend
+                // Send the video URL to our Node.js backend
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ frames: frames })
+                    body: JSON.stringify({ videoUrl: videoUrl })
                 });
 
                 const data = await response.json();
@@ -126,7 +69,7 @@
                     throw new Error(data.error || "Backend failed to analyze video.");
                 }
 
-                // 3. Display the result on the screen
+                // Split the AI response into sections
                 const sections = data.text.split(/SUMMARY:|FLAWS:|DRILLS:/i);
                 
                 document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
