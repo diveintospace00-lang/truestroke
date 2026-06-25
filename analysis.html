@@ -32,7 +32,7 @@
         <div class="loader" id="loader">
             <div class="spinner"></div>
             <h2>TrueStroke AI is analyzing your swing...</h2>
-            <p style="color: var(--text-gray);">Checking spine angle, club path, and weight transfer.</p>
+            <p style="color: var(--text-gray);">Running biomechanical pose detection and AI analysis.</p>
         </div>
 
         <div class="error-box" id="errorBox"></div>
@@ -56,7 +56,7 @@
             }
 
             try {
-                // Send the video URL to our Node.js backend
+                // Send the video URL to our Python backend
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
