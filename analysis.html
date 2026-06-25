@@ -278,16 +278,18 @@
 
             const lm = result.landmarks[0];
             const wl = (result.worldLandmarks && result.worldLandmarks[0]) || lm;
-            const need = [L_SHOULDER, R_SHOULDER, L_HIP, R_HIP, L_WRIST, R_WRIST];
-            const visOk = need.every(i => lm[i] && (lm[i].visibility === undefined || lm[i].visibility > 0.3));
 
+            // Capture every frame where a person is detected — no strict all-joints gate.
+            // Visibility is tracked per-metric so fast hands or a face-on angle don't get
+            // the whole swing thrown out.
             frames.push({
                 t: mediaTime,
-                wristMidY: (lm[L_WRIST].y + lm[R_WRIST].y) / 2,
+                handY: bestWristY(lm),                                  // most-visible wrist; hands are together on the club
                 shoulderAngle: planarAngle(wl[L_SHOULDER], wl[R_SHOULDER]),
                 hipAngle: planarAngle(wl[L_HIP], wl[R_HIP]),
                 spineAngle: spineLean(lm[L_SHOULDER], lm[R_SHOULDER], lm[L_HIP], lm[R_HIP]),
-                vis: visOk,
+                shVis: Math.min(visOf(lm, L_SHOULDER), visOf(lm, R_SHOULDER)),
+                hipVis: Math.min(visOf(lm, L_HIP), visOf(lm, R_HIP)),
             });
             if (window.__firstFrame) window.__firstFrame();
             setStatus("Analyzing your swing…", `Captured ${frames.length} frames…`);
@@ -301,6 +303,12 @@
         }
         function angDiff(a, b) { let d = a - b; while (d > 180) d -= 360; while (d < -180) d += 360; return d; }
         const avg = (arr) => arr.reduce((s, x) => s + x, 0) / arr.length;
+        const visOf = (lm, i) => (lm[i] && lm[i].visibility !== undefined) ? lm[i].visibility : 1;
+        function bestWristY(lm) {
+            const lv = visOf(lm, L_WRIST), rv = visOf(lm, R_WRIST);
+            if (Math.abs(lv - rv) < 0.15 || (lv < 0.2 && rv < 0.2)) return (lm[L_WRIST].y + lm[R_WRIST].y) / 2;
+            return lv >= rv ? lm[L_WRIST].y : lm[R_WRIST].y;
+        }
 
         async function finish(reason) {
             if (!running) return;
@@ -309,37 +317,42 @@
             try { video.pause(); } catch {}
             log('Analysis finished (' + reason + '). Total frames: ' + frames.length);
 
-            const valid = frames.filter(f => f.vis);
-            if (frames.length < 12 || valid.length < 8) {
-                showError("We couldn't read your swing clearly. Re-film side-on (down-the-line), full body in frame, good lighting, 3–5 seconds — then <a href='dashboard.html'>try again</a>.");
+            // Only fail if we barely saw a person at all (too far, too dark, too short).
+            if (frames.length < 10) {
+                showError("We didn't detect you clearly enough in the video. Make sure your full body is in frame and reasonably lit, then <a href='dashboard.html'>try again</a>.");
                 return;
             }
 
-            const head = valid.slice(0, 5);
+            const head = frames.slice(0, 5);
             const addr = {
                 shoulder: avg(head.map(f => f.shoulderAngle)),
                 hip: avg(head.map(f => f.hipAngle)),
                 spine: avg(head.map(f => f.spineAngle)),
-                wristY: avg(head.map(f => f.wristMidY)),
+                handY: avg(head.map(f => f.handY)),
                 t: head[0].t,
             };
 
+            // Top of backswing = hands highest. Vertical hand motion reads at ANY camera angle.
             let topIdx = -1, topY = Infinity;
-            for (let i = 3; i < valid.length; i++) {
-                if (valid[i].wristMidY < topY) { topY = valid[i].wristMidY; topIdx = i; }
+            for (let i = 3; i < frames.length; i++) {
+                if (frames[i].handY < topY) { topY = frames[i].handY; topIdx = i; }
             }
-            if (topIdx < 0 || (addr.wristY - topY) < 0.05) {
-                showError("We couldn't detect a backswing. Make sure the whole swing (setup through finish) is in the clip, filmed side-on, and <a href='dashboard.html'>try again</a>.");
+            if (topIdx < 0 || (addr.handY - topY) < 0.03) {
+                showError("We couldn't find a clear backswing. Keep your hands in frame for the whole swing (setup through finish) and <a href='dashboard.html'>try again</a>.");
                 return;
             }
-            const top = valid[topIdx];
+            const top = frames[topIdx];
 
+            // Impact = fastest downward hand motion after the top.
             let impIdx = topIdx, maxV = -Infinity;
-            for (let i = topIdx + 1; i < valid.length; i++) {
-                const v = valid[i].wristMidY - valid[i - 1].wristMidY;
+            for (let i = topIdx + 1; i < frames.length; i++) {
+                const v = frames[i].handY - frames[i - 1].handY;
                 if (v > maxV) { maxV = v; impIdx = i; }
             }
-            const imp = valid[impIdx];
+            const imp = frames[impIdx];
+
+            // How well were the torso joints seen? Drives the rotation-confidence note.
+            const rotConf = Math.min(avg(frames.map(f => f.shVis)), avg(frames.map(f => f.hipVis)));
 
             const metrics = {
                 shoulder_turn: Math.round(Math.abs(angDiff(top.shoulderAngle, addr.shoulder))),
@@ -349,9 +362,9 @@
             metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
             const back = top.t - addr.t, down = imp.t - top.t;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
-            log('Metrics: ' + JSON.stringify(metrics));
+            log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
 
-            renderMetrics(metrics);
+            renderMetrics(metrics, rotConf);
             setStatus("Generating your report…", "Sending your swing metrics to your AI coach.");
 
             try {
@@ -371,7 +384,7 @@
             }
         }
 
-        function renderMetrics(m) {
+        function renderMetrics(m, rotConf) {
             const items = [
                 [m.tempo_ratio + " : 1", "Tempo"],
                 [m.shoulder_turn + "°", "Shoulder turn"],
@@ -381,6 +394,9 @@
             ];
             const strip = $("metricsStrip");
             strip.innerHTML = items.map(([v, l]) => `<div class="metric"><div class="val">${v}</div><div class="lbl">${l}</div></div>`).join("");
+            if (rotConf !== undefined && rotConf < 0.6) {
+                strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">Tempo is reliable at any angle. Turn &amp; X-Factor are estimates here — for accurate rotation numbers, film down-the-line (side-on).</div>`;
+            }
             strip.style.display = "flex";
         }
         function renderReport(data) {
