@@ -22,7 +22,7 @@
         .cta-box { text-align: center; background: var(--forest-green); color: #fff; padding: 40px; border-radius: 8px; margin-top: 40px; display: none; }
         .cta-box h3 { font-family: 'Playfair Display', serif; font-size: 1.8rem; margin-bottom: 20px; }
         .cta-btn { background-color: var(--gold); color: var(--text-dark); padding: 16px 45px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
-        .error-box { background: #ffeeee; color: #cc0000; padding: 20px; border-radius: 8px; display: none; }
+        .error-box { background: #ffeeee; color: #cc0000; padding: 20px; border-radius: 8px; display: none; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -56,20 +56,28 @@
             }
 
             try {
-                // Send the video URL to our Python backend
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ videoUrl: videoUrl })
                 });
 
-                const data = await response.json();
+                // Read the response as text FIRST
+                const responseText = await response.text();
+
+                // Try to parse it as JSON
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    // If it's not JSON, it means Vercel returned an HTML error page
+                    throw new Error("Backend returned HTML instead of JSON. Error: " + responseText.substring(0, 500));
+                }
 
                 if (!response.ok) {
                     throw new Error(data.error || "Backend failed to analyze video.");
                 }
 
-                // Split the AI response into sections
                 const sections = data.text.split(/SUMMARY:|FLAWS:|DRILLS:/i);
                 
                 document.getElementById('summaryText').innerHTML = sections[1] || "<p>No summary available.</p>";
