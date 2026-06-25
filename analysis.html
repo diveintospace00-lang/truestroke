@@ -32,7 +32,7 @@
         <div class="loader" id="loader">
             <div class="spinner"></div>
             <h2>TrueStroke AI is analyzing your swing...</h2>
-            <p style="color: var(--text-gray);">Extracting 6 frames and checking spine angle.</p>
+            <p style="color: var(--text-gray);">Extracting frames and checking spine angle.</p>
         </div>
 
         <div class="error-box" id="errorBox"></div>
@@ -60,35 +60,43 @@
                 const video = document.createElement('video');
                 video.src = videoUrl;
                 video.crossOrigin = "anonymous";
+                // Crucial mobile fixes:
+                video.muted = true;
+                video.playsInline = true;
+                video.preload = 'auto';
+                
                 await new Promise((resolve, reject) => {
-                    video.onloadedmetadata = resolve;
+                    video.onloadeddata = resolve;
                     video.onerror = reject;
                 });
+
+                // Fix for iOS Infinity Duration bug
+                if (video.duration === Infinity) {
+                    video.currentTime = 1e101;
+                    await new Promise(resolve => video.ontimeupdate = resolve);
+                    video.currentTime = 0;
+                }
 
                 const frames = [];
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 
-                // Grab 6 frames at 10%, 25%, 40%, 55%, 70%, and 85% through the video
+                // Grab 4 frames: 10%, 30%, 50%, 70% through the video
                 const timestamps = [
                     video.duration * 0.10, 
-                    video.duration * 0.25, 
-                    video.duration * 0.40, 
-                    video.duration * 0.55, 
-                    video.duration * 0.70, 
-                    video.duration * 0.85
+                    video.duration * 0.30, 
+                    video.duration * 0.50, 
+                    video.duration * 0.70
                 ];
 
                 for (let i = 0; i < timestamps.length; i++) {
                     video.currentTime = timestamps[i];
                     await new Promise(resolve => video.onseeked = resolve);
                     
-                    // Make image 400px wide to keep the payload size small for Vercel
                     canvas.width = 400;
                     canvas.height = 400 * (video.videoHeight / video.videoWidth);
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     
-                    // Convert to compressed base64 JPEG
                     frames.push(canvas.toDataURL('image/jpeg', 0.5));
                 }
 
