@@ -1,3 +1,4 @@
+from flask import Flask, request, jsonify
 import json
 import os
 import tempfile
@@ -5,12 +6,13 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import requests
-from urllib.parse import urlparse
+
+app = Flask(__name__)
 
 # Config variable for the LLM
 LLM_MODEL = "deepseek/deepseek-chat-v3.1:free"
 
-def analyze_video(video_url):
+def analyze_video_logic(video_url):
     # Download the video to a temp file
     temp_video_path = tempfile.mktemp(suffix=".mp4")
     try:
@@ -36,7 +38,6 @@ def analyze_video(video_url):
         if not ret:
             break
         
-        # Convert the BGR image to RGB
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = pose.process(image)
         
@@ -51,7 +52,6 @@ def analyze_video(video_url):
         return {"error": "Could not detect enough pose data in the video. Ensure the entire body is visible."}
 
     # --- METRIC CALCULATION ---
-    # Helper function to calculate angle between 3 points
     def calculate_angle(a, b, c):
         a = np.array([a.x, a.y])
         b = np.array([b.x, b.y])
@@ -62,31 +62,25 @@ def analyze_video(video_url):
             angle = 360 - angle
         return angle
 
-    # Find the frame with the most vertical wrist position (Top of Backswing) 
-    # and the frame with the most extended wrist position (Impact)
     wrist_y = [lm[mp_pose.PoseLandmark.LEFT_WRIST.value].y for lm in landmarks_list]
-    top_index = np.argmin(wrist_y) # Highest point (smallest y)
-    impact_index = np.argmax(wrist_y) # Lowest point (largest y)
+    top_index = np.argmin(wrist_y) 
+    impact_index = np.argmax(wrist_y) 
 
-    # Ensure impact comes after top (very basic sanity check for a right-handed golfer)
     if impact_index < top_index:
         impact_index = min(len(landmarks_list)-1, top_index + 5)
 
     top_lm = landmarks_list[top_index]
     impact_lm = landmarks_list[impact_index]
 
-    # 1. Spine Angle at Impact (Shoulder - Hip - Knee verticality)
     shoulder = impact_lm[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
     hip = impact_lm[mp_pose.PoseLandmark.LEFT_HIP.value]
     knee = impact_lm[mp_pose.PoseLandmark.LEFT_KNEE.value]
     spine_angle = calculate_angle(shoulder, hip, knee)
 
-    # 2. Hip Rotation at Top (Hip line vs Horizontal)
     left_hip = top_lm[mp_pose.PoseLandmark.LEFT_HIP.value]
     right_hip = top_lm[mp_pose.PoseLandmark.RIGHT_HIP.value]
     hip_rotation = abs(np.arctan2(left_hip.y - right_hip.y, left_hip.x - right_hip.x) * 180.0 / np.pi)
 
-    # 3. Arm Extension at Impact
     left_shoulder_imp = impact_lm[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
     left_wrist_imp = impact_lm[mp_pose.PoseLandmark.LEFT_WRIST.value]
     left_hip_imp = impact_lm[mp_pose.PoseLandmark.LEFT_HIP.value]
@@ -142,38 +136,15 @@ def analyze_video(video_url):
 
     return {"text": ai_text, "metrics": metrics}
 
-# Vercel Python Serverless Function Handler
-def handler(request):
-    if request.method != 'POST':
-        return {
-            "statusCode": 405,
-            "body": json.dumps({"error": "Method Not Allowed"})
-        }
+@app.route('/api/analyze', methods=['POST'])
+def analyze_endpoint():
+    data = request.get_json()
+    if not data or 'videoUrl' not in data:
+        return jsonify({"error": "Missing videoUrl"}), 400
+        
+    result = analyze_video_logic(data['videoUrl'])
     
-    try:
-        body = json.loads(request.body)
-        video_url = body.get('videoUrl')
+    if "error" in result:
+        return jsonify(result), 500
         
-        if not video_url:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "Missing videoUrl"})
-            }
-            
-        result = analyze_video(video_url)
-        
-        if "error" in result:
-            return {
-                "statusCode": 500,
-                "body": json.dumps(result)
-            }
-            
-        return {
-            "statusCode": 200,
-            "body": json.dumps(result)
-        }
-    except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+    return jsonify(result)
