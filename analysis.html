@@ -139,7 +139,9 @@
             ]);
         }
 
-        const videoUrl = new URLSearchParams(location.search).get("video");
+        const urlParams = new URLSearchParams(location.search);
+        const videoUrl = urlParams.get("video");
+        const cameraAngle = urlParams.get("angle") || "unknown";   // "face-on" | "dtl" 
 
         async function init() {
             if (!videoUrl) {
@@ -470,7 +472,7 @@
                 const r = await fetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ metrics }),
+                    body: JSON.stringify({ metrics, angle: cameraAngle }),
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.error || "Analysis failed");
@@ -484,18 +486,26 @@
         }
 
         function renderMetrics(m, rotConf) {
-            const items = [
+            // Lead with what THIS camera angle measures well.
+            const rot = [
+                [m.shoulder_turn + "°", "Shoulder turn" + (cameraAngle === "face-on" ? " (est.)" : "")],
+                [m.hip_rotation + "°", "Hip turn" + (cameraAngle === "face-on" ? " (est.)" : "")],
+                [m.x_factor + "°", "X-Factor" + (cameraAngle === "face-on" ? " (est.)" : "")],
+            ];
+            const core = [
                 [m.tempo_ratio + " : 1", "Tempo"],
-                [m.shoulder_turn + "°", "Shoulder turn"],
-                [m.hip_rotation + "°", "Hip turn"],
-                [m.x_factor + "°", "X-Factor"],
                 [m.spine_angle_change + "°", "Spine change"],
             ];
+            const items = cameraAngle === "face-on" ? core.concat(rot) : [core[0]].concat(rot, [core[1]]);
             const strip = $("metricsStrip");
             strip.innerHTML = items.map(([v, l]) => `<div class="metric"><div class="val">${v}</div><div class="lbl">${l}</div></div>`).join("");
-            if (rotConf !== undefined && rotConf < 0.6) {
-                strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">Tempo is reliable at any angle. Turn &amp; X-Factor are estimates here — for accurate rotation numbers, film down-the-line (side-on).</div>`;
+            let note = "";
+            if (cameraAngle === "face-on") {
+                note = "Filmed face-on: tempo and spine numbers are most reliable; rotation values are estimates. Film down-the-line for precise turn numbers.";
+            } else if (rotConf !== undefined && rotConf < 0.6) {
+                note = "Some joints were hard to see in this clip, so turn numbers may be rough — better lighting and full body in frame will sharpen them.";
             }
+            if (note) strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">${note}</div>`;
             strip.style.display = "flex";
         }
         function renderReport(data) {
