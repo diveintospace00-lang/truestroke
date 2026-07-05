@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 ${angleContext}
 
 Measured metrics WITH VERDICTS (verdicts were computed by deterministic code from coaching threshold ranges — they are correct; do NOT contradict them or re-judge the numbers yourself):
-${assess(metrics)}
+${assess(metrics, angle)}
 
 Name the 1–2 most important improvement areas based ONLY on metrics whose verdict is not GOOD. NEVER list a GOOD metric as a flaw. If only one metric needs work, give one flaw and one matching drill, and praise the rest — do not invent a second flaw. Give one specific, actionable drill per flaw. Keep each flaw and drill to 1–2 sentences. Be encouraging but direct.
 
@@ -88,8 +88,15 @@ DRILL: <second drill>`;
 }
 
 // Deterministic metric verdicts — code judges the numbers, the model only writes prose.
-function assess(m) {
+function assess(m, angle) {
     const lines = [];
+    // Face-on rotation numbers are depth-based estimates. An out-of-range value at
+    // this angle gets an ESTIMATE verdict so the model cannot make it a primary flaw.
+    const rotEst = angle === 'face-on';
+    const soften = (verdict) => {
+        if (!rotEst || verdict.startsWith('GOOD')) return verdict;
+        return 'ESTIMATE ONLY — outside the typical range, but measured face-on where rotation is unreliable; mention at most as a side note, NEVER as a primary flaw (' + verdict + ')';
+    };
 
     const t = m.tempo_ratio;
     let tv;
@@ -105,21 +112,21 @@ function assess(m) {
     if (st >= 75 && st <= 110) sv = 'GOOD — full shoulder turn';
     else if (st < 75) sv = 'NEEDS WORK — restricted shoulder turn (ideal ~90°)';
     else sv = 'WATCH — possible over-rotation (ideal ~90°)';
-    lines.push(`- Shoulder turn ${st}° — VERDICT: ${sv}`);
+    lines.push(`- Shoulder turn ${st}° — VERDICT: ${soften(sv)}`);
 
     const h = m.hip_rotation;
     let hv;
     if (h >= 30 && h <= 55) hv = 'GOOD — solid hip turn';
     else if (h < 30) hv = 'NEEDS WORK — restricted hip turn (ideal ~45°)';
     else hv = 'WATCH — hips may be over-rotating (ideal ~45°)';
-    lines.push(`- Hip rotation ${h}° — VERDICT: ${hv}`);
+    lines.push(`- Hip rotation ${h}° — VERDICT: ${soften(hv)}`);
 
     const x = m.x_factor;
     let xv;
     if (x >= 25 && x <= 55) xv = 'GOOD — healthy shoulder-hip separation';
     else if (x < 25) xv = 'NEEDS WORK — low separation, costing stored power (ideal ~40–50°)';
     else xv = 'WATCH — very high separation; ensure flexibility supports it';
-    lines.push(`- X-Factor ${x}° — VERDICT: ${xv}`);
+    lines.push(`- X-Factor ${x}° — VERDICT: ${soften(xv)}`);
 
     const sp = Math.abs(m.spine_angle_change);
     let pv;
