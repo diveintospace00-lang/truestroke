@@ -513,10 +513,18 @@
             video.style.display = "none";
             $("summaryText").innerHTML = data.summary ? `<p>${data.summary}</p>` : "<p>—</p>";
             $("flawsText").innerHTML = listHtml(data.flaws);
-            $("drillsText").innerHTML = listHtml(data.drills);
+            $("drillsText").innerHTML = drillsHtml(data.drills);
             $("summaryCard").style.display = "block";
             $("flawsCard").style.display = "block";
             $("drillsCard").style.display = "block";
+        }
+        function drillsHtml(drills) {
+            if (!Array.isArray(drills) || !drills.length) return "<p>—</p>";
+            return drills.map(d => {
+                if (typeof d === "string") return `<p>${d}</p>`;
+                const btn = d.video ? `<a href="${d.video}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--forest-green);font-weight:600;text-decoration:none;">▶ Watch this drill</a>` : "";
+                return `<div style="margin-bottom:22px;"><strong style="color:var(--text-dark);">${d.name}</strong><p style="margin:6px 0 0;">${d.how}</p>${btn}</div>`;
+            }).join("");
         }
         function listHtml(arr) {
             if (Array.isArray(arr) && arr.length) return "<ul>" + arr.map(x => `<li>${x}</li>`).join("") + "</ul>";
