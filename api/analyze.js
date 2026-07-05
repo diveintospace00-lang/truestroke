@@ -42,8 +42,12 @@ Measured metrics:
 
 Identify the 2 most important flaws these numbers suggest and give 2 specific, actionable drills that fix them. Keep each flaw and drill to 1–2 sentences. Be encouraging but direct.
 
-Respond with ONLY a valid JSON object, no markdown, no code fences, in exactly this shape:
-{"summary": "2-3 sentence overview", "flaws": ["flaw 1", "flaw 2"], "drills": ["drill 1", "drill 2"]}`;
+Respond in EXACTLY this plain-text line format — no JSON, no markdown, no extra lines:
+SUMMARY: <2-3 sentence overview>
+FLAW: <first flaw>
+FLAW: <second flaw>
+DRILL: <first drill>
+DRILL: <second drill>`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -79,18 +83,20 @@ Respond with ONLY a valid JSON object, no markdown, no code fences, in exactly t
     }
 }
 
-// Defensive parse: strip any code fences, try JSON, fall back to plain text.
+// Line-based parse: immune to stray quotes/JSON breakage from the model.
 function parseCoaching(raw) {
-    let text = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
-    try {
-        const obj = JSON.parse(text);
-        return {
-            summary: typeof obj.summary === 'string' ? obj.summary : '',
-            flaws: Array.isArray(obj.flaws) ? obj.flaws.map(String) : [],
-            drills: Array.isArray(obj.drills) ? obj.drills.map(String) : [],
-        };
-    } catch {
-        // Model didn't return clean JSON — surface its text rather than failing.
-        return { summary: raw.trim(), flaws: [], drills: [] };
+    const text = raw.replace(/```/g, '').trim();
+    const out = { summary: '', flaws: [], drills: [] };
+    for (const line of text.split(/\r?\n/)) {
+        const t = line.trim();
+        if (/^SUMMARY\s*:/i.test(t)) out.summary = t.replace(/^SUMMARY\s*:/i, '').trim();
+        else if (/^FLAW\s*:/i.test(t)) out.flaws.push(t.replace(/^FLAW\s*:/i, '').trim());
+        else if (/^DRILL\s*:/i.test(t)) out.drills.push(t.replace(/^DRILL\s*:/i, '').trim());
+        else if (out.summary && !out.flaws.length && !out.drills.length && t) out.summary += ' ' + t; // wrapped summary lines
     }
+    out.flaws = out.flaws.filter(Boolean);
+    out.drills = out.drills.filter(Boolean);
+    // Total failure fallback: show the raw text rather than nothing.
+    if (!out.summary && !out.flaws.length && !out.drills.length) out.summary = text;
+    return out;
 }
