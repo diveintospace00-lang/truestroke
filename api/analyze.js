@@ -41,14 +41,10 @@ export default async function handler(req, res) {
 
 ${angleContext}
 
-Measured metrics:
-- Shoulder turn at top: ${metrics.shoulder_turn}°  (ideal ~90°)
-- Hip rotation at top: ${metrics.hip_rotation}°  (ideal ~45°)
-- X-Factor (shoulder minus hip separation): ${metrics.x_factor}°  (ideal ~40–50°)
-- Spine angle change, address to impact: ${metrics.spine_angle_change}°  (smaller is better; large change suggests early extension / loss of posture)
-- Tempo ratio, backswing : downswing: ${metrics.tempo_ratio} : 1  (ideal ~3 : 1)
+Measured metrics WITH VERDICTS (verdicts were computed by deterministic code from coaching threshold ranges — they are correct; do NOT contradict them or re-judge the numbers yourself):
+${assess(metrics)}
 
-Identify the 2 most important flaws these numbers suggest and give 2 specific, actionable drills that fix them. Keep each flaw and drill to 1–2 sentences. Be encouraging but direct.
+Name the 1–2 most important improvement areas based ONLY on metrics whose verdict is not GOOD. NEVER list a GOOD metric as a flaw. If only one metric needs work, give one flaw and one matching drill, and praise the rest — do not invent a second flaw. Give one specific, actionable drill per flaw. Keep each flaw and drill to 1–2 sentences. Be encouraging but direct.
 
 Respond in EXACTLY this plain-text line format — no JSON, no markdown, no extra lines:
 SUMMARY: <2-3 sentence overview>
@@ -89,6 +85,50 @@ DRILL: <second drill>`;
     } finally {
         clearTimeout(timeout);
     }
+}
+
+// Deterministic metric verdicts — code judges the numbers, the model only writes prose.
+function assess(m) {
+    const lines = [];
+
+    const t = m.tempo_ratio;
+    let tv;
+    if (t >= 2.5 && t <= 3.5) tv = 'GOOD — right around the ideal 3:1';
+    else if (t >= 2.0 && t < 2.5) tv = 'SLIGHTLY QUICK — downswing a touch rushed vs the ideal 3:1';
+    else if (t > 3.5 && t <= 4.2) tv = 'SLIGHTLY SLOW — backswing a touch long vs the ideal 3:1';
+    else if (t < 2.0) tv = 'NEEDS WORK — downswing is rushed (ideal ~3:1)';
+    else tv = 'NEEDS WORK — tempo is sluggish (ideal ~3:1)';
+    lines.push(`- Tempo ${t}:1 — VERDICT: ${tv}`);
+
+    const st = m.shoulder_turn;
+    let sv;
+    if (st >= 75 && st <= 110) sv = 'GOOD — full shoulder turn';
+    else if (st < 75) sv = 'NEEDS WORK — restricted shoulder turn (ideal ~90°)';
+    else sv = 'WATCH — possible over-rotation (ideal ~90°)';
+    lines.push(`- Shoulder turn ${st}° — VERDICT: ${sv}`);
+
+    const h = m.hip_rotation;
+    let hv;
+    if (h >= 30 && h <= 55) hv = 'GOOD — solid hip turn';
+    else if (h < 30) hv = 'NEEDS WORK — restricted hip turn (ideal ~45°)';
+    else hv = 'WATCH — hips may be over-rotating (ideal ~45°)';
+    lines.push(`- Hip rotation ${h}° — VERDICT: ${hv}`);
+
+    const x = m.x_factor;
+    let xv;
+    if (x >= 25 && x <= 55) xv = 'GOOD — healthy shoulder-hip separation';
+    else if (x < 25) xv = 'NEEDS WORK — low separation, costing stored power (ideal ~40–50°)';
+    else xv = 'WATCH — very high separation; ensure flexibility supports it';
+    lines.push(`- X-Factor ${x}° — VERDICT: ${xv}`);
+
+    const sp = Math.abs(m.spine_angle_change);
+    let pv;
+    if (sp <= 8) pv = 'GOOD — posture held through impact';
+    else if (sp <= 16) pv = 'WATCH — moderate posture change into impact';
+    else pv = 'NEEDS WORK — significant posture change into impact (early extension or sway)';
+    lines.push(`- Spine angle change ${m.spine_angle_change}° — VERDICT: ${pv}`);
+
+    return lines.join('\n');
 }
 
 // Line-based parse: immune to stray quotes/JSON breakage from the model.
