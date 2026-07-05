@@ -30,8 +30,16 @@ export default async function handler(req, res) {
     if (!metrics || typeof metrics !== 'object') {
         return res.status(400).json({ error: 'Missing "metrics" in request body.' });
     }
+    const angle = body.angle === 'face-on' || body.angle === 'dtl' ? body.angle : 'unknown';
+    const angleContext = angle === 'face-on'
+        ? 'The video was filmed FACE-ON (camera facing the golfer). At this angle, tempo and spine/posture numbers are reliable, but shoulder/hip rotation values are rough estimates — do NOT build your primary critique on exact rotation degrees. Lead with tempo and posture; mention rotation only directionally.'
+        : angle === 'dtl'
+        ? 'The video was filmed DOWN-THE-LINE (camera behind the hands, aimed at the target). At this angle, rotation numbers (shoulder turn, hip turn, X-Factor) and spine angle are reliable — you can coach confidently on them.'
+        : 'The camera angle is unknown; treat rotation values as approximate.';
 
     const prompt = `You are an expert PGA golf coach analyzing a swing measured by computer vision (single-camera pose estimation, so treat values as good estimates rather than launch-monitor exact).
+
+${angleContext}
 
 Measured metrics:
 - Shoulder turn at top: ${metrics.shoulder_turn}°  (ideal ~90°)
