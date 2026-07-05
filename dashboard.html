@@ -23,6 +23,14 @@
         .upload-btn { background-color: var(--forest-green); color: #fff; padding: 14px 40px; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; margin-top: 40px; cursor: pointer; transition: background-color 0.3s; }
         .upload-btn:disabled { background-color: #ccc; cursor: not-allowed; }
         #status { margin-top: 30px; font-size: 1.1rem; color: var(--forest-green); font-weight: 600; min-height: 1.4em; }
+        .angle-section { margin-top: 40px; }
+        .angle-label { font-size: 0.85rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+        .angle-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .angle-card { flex: 1; min-width: 140px; max-width: 220px; border: 1px solid #ddd; border-radius: 8px; padding: 18px 14px; cursor: pointer; background: #fff; transition: border-color 0.2s, background-color 0.2s; }
+        .angle-card .icon { font-size: 1.6rem; margin-bottom: 8px; }
+        .angle-card .name { font-weight: 600; color: var(--text-dark); font-size: 0.95rem; }
+        .angle-card .desc { font-size: 0.8rem; color: var(--text-gray); margin-top: 4px; }
+        .angle-card.selected { border-color: var(--gold); background: #faf8f3; box-shadow: 0 0 0 1px var(--gold); }
         #configError { display: none; margin: 0 auto 30px; max-width: 640px; background: #fff7e6; border: 1px solid var(--gold); color: #6b5320; border-radius: 8px; padding: 16px 20px; text-align: left; font-size: 0.95rem; }
         #configError code { background: #f0ead9; padding: 1px 5px; border-radius: 3px; }
     </style>
@@ -39,6 +47,21 @@
             <input type="file" id="fileInput" accept="video/*" style="display: none;">
             <div class="upload-icon">🏌️‍♂️</div>
             <div class="upload-text" id="dropzoneText">Click to select a video</div>
+        </div>
+        <div class="angle-section">
+            <div class="angle-label">How was it filmed?</div>
+            <div class="angle-row">
+                <div class="angle-card" id="angleFace" data-angle="face-on">
+                    <div class="icon">🙂</div>
+                    <div class="name">Facing me</div>
+                    <div class="desc">Camera looks at your chest</div>
+                </div>
+                <div class="angle-card" id="angleDtl" data-angle="dtl">
+                    <div class="icon">➡️</div>
+                    <div class="name">Down my side</div>
+                    <div class="desc">Camera behind hands, aimed at target</div>
+                </div>
+            </div>
         </div>
         <button class="upload-btn" id="analyzeBtn" disabled>Analyze My Swing</button>
         <div id="status"></div>
@@ -65,7 +88,20 @@
         const configError = document.getElementById('configError');
 
         let selectedFile = null;
+        let selectedAngle = null;
         let sbClient = null;
+
+        document.querySelectorAll('.angle-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.angle-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedAngle = card.dataset.angle;
+                updateButton();
+            });
+        });
+        function updateButton() {
+            analyzeBtn.disabled = !(selectedFile && selectedAngle && supabaseReady);
+        }
 
         // Validate config BEFORE creating the client, so a missing key shows a
         // clear message instead of throwing and silently killing the whole page.
@@ -110,15 +146,17 @@
             dropzoneText.textContent = `Selected: ${file.name}`;
             status.style.color = 'var(--forest-green)';
             status.textContent = '';
-            analyzeBtn.disabled = !supabaseReady;
+            updateButton();
             if (!supabaseReady) {
                 status.style.color = '#cc0000';
                 status.textContent = 'Finish Supabase setup above before uploading.';
+            } else if (!selectedAngle) {
+                status.textContent = 'Now pick how it was filmed.';
             }
         });
 
         analyzeBtn.addEventListener('click', async () => {
-            if (!selectedFile || !sbClient) return;
+            if (!selectedFile || !sbClient || !selectedAngle) return;
             analyzeBtn.disabled = true;
             status.style.color = 'var(--forest-green)';
             status.textContent = 'Uploading video…';
@@ -143,7 +181,7 @@
 
                 const publicUrl = urlData.publicUrl;
                 status.textContent = 'Upload complete. Opening analysis…';
-                window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}`;
+                window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}&angle=${selectedAngle}`;
             } catch (err) {
                 status.style.color = '#cc0000';
                 status.textContent = `Upload failed: ${err.message}`;
