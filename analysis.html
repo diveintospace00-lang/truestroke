@@ -259,9 +259,9 @@
 
         async function seekAnalyze() {
             try { video.pause(); } catch {}
-            const FPS = 20;                                   // 20 samples/sec: plenty for swing phases
+            const FPS = 30;                                   // 30 samples/sec: tight enough that tempo stops wobbling across verdict boundaries
             const dur = video.duration;
-            const total = Math.min(Math.floor(dur * FPS), 240); // cap: 12s of video
+            const total = Math.min(Math.floor(dur * FPS), 300); // cap: 10s of video
             let missed = 0;
             for (let i = 0; i < total && running; i++) {
                 const t = i / FPS;
