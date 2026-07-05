@@ -91,7 +91,8 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        log('Module loaded ✓');
+        const APP_VERSION = 'v2.1 (dup-detect + slow-capture fallback)';
+        log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
         const loader = $("loader"), statusTitle = $("statusTitle"), statusText = $("statusText");
@@ -111,6 +112,7 @@
         // Detection clock: derived from the video's own media time so identical clips
         // produce identical tracker behavior. Offset keeps it monotonic across runs.
         let tsOffset = 0, lastTs = -1;
+        let dupCount = 0, prevSig = null;   // detects keyframe-snapped (repeated) frames
         function tsFor(mediaTime) {
             let ts = Math.round(tsOffset + mediaTime * 1000);
             if (ts <= lastTs) ts = lastTs + 1;
@@ -238,6 +240,7 @@
             setStatus("Analyzing your swing…", "Measuring your swing frame by frame…");
             frames = [];
             running = true;
+            dupCount = 0; prevSig = null;
             tsOffset = lastTs + 1000;   // new run: keep the detection clock monotonic
             let firstFrameSeen = false;
             window.__firstFrame = () => { firstFrameSeen = true; };
@@ -284,8 +287,47 @@
                 captureFrame(t);
                 if (i % 10 === 0) setStatus("Analyzing your swing…", "Measured " + Math.round((i / total) * 100) + "% of your swing…");
             }
-            log('Seek pass done: ' + frames.length + ' frames measured, ' + missed + ' seeks missed.');
+            log('Seek pass done: ' + frames.length + ' frames measured, ' + missed + ' seeks missed, ' + dupCount + ' duplicates.');
+            if (running && frames.length > 0 && dupCount / frames.length > 0.35) {
+                // Keyframe snapping confirmed: most seeks returned a repeated picture.
+                // Metrics from that staircase would be garbage — recapture via slow playback.
+                log('Seek snapping detected — switching to slow-playback capture…');
+                frames = []; dupCount = 0; prevSig = null;
+                await slowPlaybackAnalyze();
+                return;
+            }
             if (running) finish("complete");
+        }
+
+        async function slowPlaybackAnalyze() {
+            setStatus("Analyzing your swing…", "Re-measuring your swing in slow motion…");
+            try {
+                video.currentTime = 0;
+                video.playbackRate = 0.5;   // half speed: detection keeps up, so nearly every real frame is captured
+                await video.play();
+            } catch (err) {
+                log('Slow playback failed to start: ' + err.message);
+                if (running) finish("slow-play-failed");
+                return;
+            }
+            // Timestamps below are MEDIA time, not wall-clock — playing at 0.5x does
+            // not distort tempo or any other metric.
+            if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+                const onF = (now, md) => {
+                    if (!running) return;
+                    captureFrame(md ? md.mediaTime : video.currentTime);
+                    if (running) video.requestVideoFrameCallback(onF);
+                };
+                video.requestVideoFrameCallback(onF);
+            } else {
+                const loop = () => {
+                    if (!running) return;
+                    captureFrame(video.currentTime);
+                    if (!video.paused && !video.ended && running) requestAnimationFrame(loop);
+                };
+                loop();
+            }
+            // the existing 'ended' listener and 60s watchdog close this path out
         }
 
         function seekTo(t) {
@@ -346,6 +388,14 @@
 
             const lm = result.landmarks[0];
             const wl = (result.worldLandmarks && result.worldLandmarks[0]) || lm;
+
+            // Duplicate detection: if the wrists+shoulder haven't moved AT ALL since the
+            // previous sample, the browser served us the same picture again (keyframe snap).
+            const sig = lm[L_WRIST].x.toFixed(4) + ',' + lm[L_WRIST].y.toFixed(4) + ',' +
+                        lm[R_WRIST].x.toFixed(4) + ',' + lm[R_WRIST].y.toFixed(4) + ',' +
+                        lm[L_SHOULDER].x.toFixed(4);
+            if (sig === prevSig) dupCount++;
+            prevSig = sig;
 
             // Capture every frame where a person is detected — no strict all-joints gate.
             // Visibility is tracked per-metric so fast hands or a face-on angle don't get
