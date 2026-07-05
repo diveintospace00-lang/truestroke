@@ -2,6 +2,71 @@
 // Receives computed swing metrics (numbers only), asks Groq for coaching,
 // and returns structured JSON: { summary, flaws[], drills[] }.
 
+// ============================================================
+// DRILL LIBRARY — curated by you, the golfer. The AI never invents drills or
+// links; code picks from this list based on the detected flaws.
+//
+// TO FILL IN: search YouTube using each drill's 'search' terms (these are the
+// names golf instructors actually use), watch
+// it fully, and paste the link over PASTE_YOUTUBE_LINK_HERE. Drills without a
+// real link still appear in reports as text, just without a video button.
+// ============================================================
+const DRILL_LIBRARY = [
+    { id: 'tour_tempo',   fixes: 'tempo_quick',        name: '1-2-3-ONE Tempo Drill (Tour Tempo)', video: 'https://www.youtube.com/watch?v=j1e15G9PMqg', search: 'Tour Tempo drill OR 1-2-3-1 golf tempo',
+      how: 'Count out loud as you swing: "one-two-three" for the backswing, "ONE" for the downswing. Three counts back, one count down is the 3:1 ratio the pros share. Start with half swings until the count feels automatic.' },
+    { id: 'step_drill',   fixes: 'tempo_quick',        name: 'Step-Through Tempo Drill',   video: 'https://www.youtube.com/watch?v=u382ZZHdmfw', search: 'golf step drill tempo',
+      how: 'Start with feet together, step toward the target with your lead foot as you start the downswing. Forces an unhurried transition and proper sequencing.' },
+    { id: 'whoosh',       fixes: 'tempo_slow',         name: 'Whoosh Drill',               video: 'https://www.youtube.com/watch?v=4VbhVMVprmc', search: 'golf whoosh drill swing speed',
+      how: 'Flip a club upside down, grip the shaft, and swing so the loudest whoosh happens past where the ball would be. Trains committing speed to the right moment instead of a labored backswing.' },
+    { id: 'towel_turn',   fixes: 'shoulder_restricted', name: 'Cross-Arm Turn Drill',      video: 'https://www.youtube.com/shorts/uEA2c_dgTrg', search: 'golf cross arm shoulder turn drill',
+      how: 'Cross your arms over your chest, get in posture, and turn until your lead shoulder is over your trail knee. Do 10 slow reps before hitting balls to feel a full turn.' },
+    { id: 'hip_bump',     fixes: 'hip_restricted',     name: 'Hip Bump Drill',             video: 'https://www.youtube.com/watch?v=URfeL15PnyE', search: 'golf hip bump drill downswing',
+      how: 'Place an alignment stick in the ground just outside your lead hip. Rehearse starting the downswing by bumping your hip toward the stick before your arms move.' },
+    { id: 'chair_hips',   fixes: 'hip_over',           name: 'Chair Resistance Drill',     video: 'https://www.youtube.com/shorts/vkKV-LEWsNo', search: 'golf chair drill hip restriction backswing',
+      how: 'Set up with your trail hip lightly touching a chair back. Make backswings keeping contact — your upper body turns fully while the hips stay quieter, restoring separation.' },
+    { id: 'xfactor_stretch', fixes: 'low_separation',  name: 'X-Factor Stretch Drill',     video: 'https://www.youtube.com/watch?v=A02mGrmyZaE', search: 'golf x factor stretch drill shoulder hip separation',
+      how: 'Get into your golf posture with a club held across your chest (or arms crossed). Keeping your lower body quiet — knees flexed, feet planted — turn your shoulders to the top and feel the stretch build across your core. Hold for two seconds, return, and repeat 10 times. No equipment needed.' },
+    { id: 'wall_butt',    fixes: 'posture_loss',       name: 'Wall Drill (Anti-Early-Extension)', video: 'https://www.youtube.com/watch?v=xzvtN-0dRI4', search: 'golf wall drill early extension',
+      how: 'Set up with your rear end lightly touching a wall. Make slow swings keeping it in contact through impact. If you lose the wall, you stood up out of posture.' },
+    { id: 'towel_heels',  fixes: 'posture_loss',       name: 'Towel-Behind-the-Heels Drill', video: 'PASTE_YOUTUBE_LINK_HERE', search: 'golf towel behind heels drill stay in posture',
+      how: 'Place a towel or headcover on the ground a few inches behind your heels at address. Swing to the top — if you can still see it out of the corner of your eye, your spine angle held. If it disappears, you stood up out of your posture.' },
+    { id: 'feet_together', fixes: 'general',           name: 'Feet-Together Balance Drill', video: 'https://www.youtube.com/watch?v=MaWn4zp1hQ8', search: 'golf feet together drill balance tempo',
+      how: 'Hit half-speed shots with your feet touching. Impossible to do without smooth tempo and balance — a great maintenance drill when nothing is broken.' },
+];
+
+// Deterministic flaw detection — same thresholds as the verdicts in assess().
+// Face-on rotation flaws are suppressed (depth estimates, not coachable numbers).
+function detectFlaws(m, angle) {
+    const flaws = [];
+    if (m.tempo_ratio < 2.5) flaws.push('tempo_quick');
+    else if (m.tempo_ratio > 3.5) flaws.push('tempo_slow');
+    if (Math.abs(m.spine_angle_change) > 16) flaws.push('posture_loss');
+    if (angle !== 'face-on') {
+        if (m.shoulder_turn < 75) flaws.push('shoulder_restricted');
+        if (m.hip_rotation < 30) flaws.push('hip_restricted');
+        else if (m.hip_rotation > 55) flaws.push('hip_over');
+        if (m.x_factor < 25) flaws.push('low_separation');
+    }
+    return flaws.slice(0, 2); // coach the two most important, in threshold order
+}
+
+function pickDrills(flawCats) {
+    const cats = flawCats.length ? flawCats : ['general'];
+    const picked = [];
+    // One drill per flaw when there are two flaws; when a swing has a single
+    // flaw, prescribe up to two drills for it (a fuller plan for one problem).
+    const perCat = cats.length === 1 ? 2 : 1;
+    for (const cat of cats) {
+        const matches = DRILL_LIBRARY.filter(x => x.fixes === cat && !picked.includes(x));
+        picked.push(...matches.slice(0, perCat));
+    }
+    return picked.map(d => ({
+        name: d.name,
+        how: d.how,
+        video: (d.video && !d.video.includes('PASTE')) ? d.video : null,
+    }));
+}
+
 const LLM_CONFIG = {
     // NOTE: llama-3.1-8b-instant was DEPRECATED on Groq (June 17, 2026).
     // Using its recommended replacement. Swap this one line to change models:
@@ -44,14 +109,12 @@ ${angleContext}
 Measured metrics WITH VERDICTS (verdicts were computed by deterministic code from coaching threshold ranges — they are correct; do NOT contradict them or re-judge the numbers yourself):
 ${assess(metrics, angle)}
 
-Name the 1–2 most important improvement areas based ONLY on metrics whose verdict is not GOOD. NEVER list a GOOD metric as a flaw. If only one metric needs work, give one flaw and one matching drill, and praise the rest — do not invent a second flaw. Give one specific, actionable drill per flaw. Keep each flaw and drill to 1–2 sentences. Be encouraging but direct.
+Describe the improvement areas based ONLY on metrics whose verdict is NEEDS WORK or WATCH (never GOOD, never ESTIMATE ONLY). If nothing needs work, say so warmly — do not invent flaws. Do NOT suggest drills; a drill plan is attached separately. Keep each flaw to 1–2 sentences. Be encouraging but direct.
 
-Respond in EXACTLY this plain-text line format — no JSON, no markdown, no extra lines:
+Respond in EXACTLY this plain-text line format — no JSON, no markdown, no extra lines (omit FLAW lines if nothing needs work):
 SUMMARY: <2-3 sentence overview>
-FLAW: <first flaw>
-FLAW: <second flaw>
-DRILL: <first drill>
-DRILL: <second drill>`;
+FLAW: <first improvement area>
+FLAW: <second improvement area, only if genuinely warranted>`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -78,6 +141,7 @@ DRILL: <second drill>`;
 
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = parseCoaching(raw);
+        parsed.drills = pickDrills(detectFlaws(metrics, angle));   // drills come from the curated library, never the model
         return res.status(200).json(parsed);
     } catch (error) {
         const msg = error.name === 'AbortError' ? 'The AI coach timed out. Please try again.' : error.message;
