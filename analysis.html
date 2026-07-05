@@ -309,6 +309,13 @@
             if (Math.abs(lv - rv) < 0.15 || (lv < 0.2 && rv < 0.2)) return (lm[L_WRIST].y + lm[R_WRIST].y) / 2;
             return lv >= rv ? lm[L_WRIST].y : lm[R_WRIST].y;
         }
+        // 5-point moving average: kills single-frame jitter so top/impact picks are stable.
+        function smooth(arr) {
+            return arr.map((_, i) => {
+                const a = Math.max(0, i - 2), b = Math.min(arr.length, i + 3);
+                return avg(arr.slice(a, b));
+            });
+        }
 
         async function finish(reason) {
             if (!running) return;
@@ -323,30 +330,45 @@
                 return;
             }
 
-            const head = frames.slice(0, 5);
-            const addr = {
-                shoulder: avg(head.map(f => f.shoulderAngle)),
-                hip: avg(head.map(f => f.hipAngle)),
-                spine: avg(head.map(f => f.spineAngle)),
-                handY: avg(head.map(f => f.handY)),
-                t: head[0].t,
-            };
+            // Smooth the hand signal so a single jittery frame can't move the phase picks.
+            const y = smooth(frames.map(f => f.handY));
 
-            // Top of backswing = hands highest. Vertical hand motion reads at ANY camera angle.
+            // Top of backswing = hands highest (smoothed). Reads at ANY camera angle.
             let topIdx = -1, topY = Infinity;
             for (let i = 3; i < frames.length; i++) {
-                if (frames[i].handY < topY) { topY = frames[i].handY; topIdx = i; }
+                if (y[i] < topY) { topY = y[i]; topIdx = i; }
             }
-            if (topIdx < 0 || (addr.handY - topY) < 0.03) {
+
+            // TAKEAWAY: walk BACKWARD from the top to the last calm frame. Backswing is
+            // measured from when the hands actually start moving — NOT from frame 0 —
+            // so standing over the ball no longer inflates (and randomizes) tempo.
+            const preTop = y.slice(0, Math.max(topIdx, 1));
+            const calmY = avg(preTop.slice(0, Math.min(5, preTop.length)));   // resting hand height
+            const rise = Math.max(0.015, (calmY - topY) * 0.10);              // 10% of total lift
+            let takeIdx = 0;
+            for (let i = topIdx; i >= 1; i--) {
+                if (calmY - y[i] < rise) { takeIdx = i; break; }
+            }
+
+            const headFrames = frames.slice(Math.max(0, takeIdx - 4), takeIdx + 1);
+            const addr = {
+                shoulder: avg(headFrames.map(f => f.shoulderAngle)),
+                hip: avg(headFrames.map(f => f.hipAngle)),
+                spine: avg(headFrames.map(f => f.spineAngle)),
+                handY: calmY,
+                t: frames[takeIdx].t,
+            };
+
+            if (topIdx < 0 || (calmY - topY) < 0.03) {
                 showError("We couldn't find a clear backswing. Keep your hands in frame for the whole swing (setup through finish) and <a href='dashboard.html'>try again</a>.");
                 return;
             }
             const top = frames[topIdx];
 
-            // Impact = fastest downward hand motion after the top.
+            // Impact = fastest downward hand motion after the top (on the smoothed signal).
             let impIdx = topIdx, maxV = -Infinity;
             for (let i = topIdx + 1; i < frames.length; i++) {
-                const v = frames[i].handY - frames[i - 1].handY;
+                const v = y[i] - y[i - 1];
                 if (v > maxV) { maxV = v; impIdx = i; }
             }
             const imp = frames[impIdx];
@@ -362,6 +384,7 @@
             metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
             const back = top.t - addr.t, down = imp.t - top.t;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
+            log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + top.t.toFixed(2) + 's, impact: ' + imp.t.toFixed(2) + 's');
             log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
 
             renderMetrics(metrics, rotConf);
