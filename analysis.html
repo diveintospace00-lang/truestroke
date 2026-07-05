@@ -224,13 +224,63 @@
             if (!poseLandmarker || running) return;
             startBtn.style.display = "none";
             loader.style.display = "block";
-            setStatus("Analyzing your swing…", "Tracking your body through the swing — keep this tab open.");
-            log('Analysis started.');
+            setStatus("Analyzing your swing…", "Measuring your swing frame by frame…");
             frames = [];
             running = true;
             let firstFrameSeen = false;
             window.__firstFrame = () => { firstFrameSeen = true; };
+            watchdog = setTimeout(() => finish("watchdog"), 60000);
 
+            if (isFinite(video.duration) && video.duration > 0.3) {
+                // DETERMINISTIC PATH: step through fixed timestamps. Same clip -> same
+                // frames -> same metrics, every run. Possible because the blob gives us
+                // a known duration (the original iOS Infinity-duration bug doesn't
+                // apply to local blob data).
+                log('Deterministic seek analysis: ' + video.duration.toFixed(2) + 's clip');
+                await seekAnalyze();
+            } else {
+                // Fallback if duration is somehow unknown: old playback method.
+                log('Duration unknown — falling back to playback analysis (less repeatable).');
+                await playbackAnalyze(firstFrameSeen);
+            }
+        });
+
+        async function seekAnalyze() {
+            try { video.pause(); } catch {}
+            const FPS = 20;                                   // 20 samples/sec: plenty for swing phases
+            const dur = video.duration;
+            const total = Math.min(Math.floor(dur * FPS), 240); // cap: 12s of video
+            let missed = 0;
+            for (let i = 0; i < total && running; i++) {
+                const t = i / FPS;
+                const ok = await seekTo(t);
+                if (!ok) { missed++; continue; }
+                captureFrame(t);
+                if (i % 10 === 0) setStatus("Analyzing your swing…", "Measured " + Math.round((i / total) * 100) + "% of your swing…");
+            }
+            log('Seek pass done: ' + frames.length + ' frames measured, ' + missed + ' seeks missed.');
+            if (running) finish("complete");
+        }
+
+        function seekTo(t) {
+            return new Promise((resolve) => {
+                let done = false;
+                const timer = setTimeout(() => {
+                    if (!done) { done = true; video.removeEventListener("seeked", onSeek); resolve(false); }
+                }, 1500);
+                const onSeek = () => {
+                    if (!done) { done = true; clearTimeout(timer); resolve(true); }
+                };
+                video.addEventListener("seeked", onSeek, { once: true });
+                try {
+                    video.currentTime = Math.min(t, Math.max(0, video.duration - 0.01));
+                } catch (e) {
+                    if (!done) { done = true; clearTimeout(timer); video.removeEventListener("seeked", onSeek); resolve(false); }
+                }
+            });
+        }
+
+        async function playbackAnalyze(firstFrameSeen) {
             try {
                 video.currentTime = 0;
                 await video.play();
@@ -239,33 +289,25 @@
                 showError("Couldn't start playback. Tap the video once to start it, then re-run.");
                 return;
             }
-
-            const maxMs = (isFinite(video.duration) ? video.duration * 1000 : 8000) + 4000;
-            watchdog = setTimeout(() => finish("watchdog"), maxMs);
             lastFrameAt = performance.now();
             stallTimer = setInterval(() => {
                 if (running && firstFrameSeen && performance.now() - lastFrameAt > 1500) finish("stall");
             }, 500);
-
             if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+                const onFrame = (now, metadata) => {
+                    if (!running) return;
+                    captureFrame(metadata ? metadata.mediaTime : video.currentTime);
+                    if (running) video.requestVideoFrameCallback(onFrame);
+                };
                 video.requestVideoFrameCallback(onFrame);
             } else {
-                log('requestVideoFrameCallback unavailable — using rAF fallback.');
+                const rafLoop = () => {
+                    if (!running) return;
+                    captureFrame(video.currentTime);
+                    if (!video.paused && !video.ended && running) requestAnimationFrame(rafLoop);
+                };
                 rafLoop();
             }
-        });
-
-        video.addEventListener("ended", () => { if (running) finish("ended"); });
-
-        function onFrame(now, metadata) {
-            if (!running) return;
-            captureFrame(metadata ? metadata.mediaTime : video.currentTime);
-            if (running) video.requestVideoFrameCallback(onFrame);
-        }
-        function rafLoop() {
-            if (!running) return;
-            captureFrame(video.currentTime);
-            if (!video.paused && !video.ended && running) requestAnimationFrame(rafLoop);
         }
 
         function captureFrame(mediaTime) {
