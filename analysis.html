@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.1 (dup-detect + slow-capture fallback)';
+        const APP_VERSION = 'v2.2 (20fps + pixel dup-detect + sub-frame tempo)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -113,6 +113,20 @@
         // produce identical tracker behavior. Offset keeps it monotonic across runs.
         let tsOffset = 0, lastTs = -1;
         let dupCount = 0, prevSig = null;   // detects keyframe-snapped (repeated) frames
+        // Pixel-level duplicate check: a tiny thumbnail of each frame. Landmarks can't be
+        // used for this (MediaPipe's temporal filter changes them even on identical pictures).
+        const dupCanvas = document.createElement('canvas');
+        dupCanvas.width = 16; dupCanvas.height = 16;
+        const dupCtx = dupCanvas.getContext('2d', { willReadFrequently: true });
+        function frameSig() {
+            try {
+                dupCtx.drawImage(video, 0, 0, 16, 16);
+                const d = dupCtx.getImageData(0, 0, 16, 16).data;
+                let h = '';
+                for (let i = 0; i < d.length; i += 64) h += d[i] + ',';
+                return h;
+            } catch { return null; }
+        }
         function tsFor(mediaTime) {
             let ts = Math.round(tsOffset + mediaTime * 1000);
             if (ts <= lastTs) ts = lastTs + 1;
@@ -276,9 +290,9 @@
 
         async function seekAnalyze() {
             try { video.pause(); } catch {}
-            const FPS = 30;                                   // 30 samples/sec: tight enough that tempo stops wobbling across verdict boundaries
+            const FPS = 20;                                   // 20 samples/sec: proven reliable on real phones (30fps outpaced the decoder and produced repeated frames). Sub-frame interpolation below restores tempo precision.
             const dur = video.duration;
-            const total = Math.min(Math.floor(dur * FPS), 300); // cap: 10s of video
+            const total = Math.min(Math.floor(dur * FPS), 240); // cap: 12s of video
             let missed = 0;
             for (let i = 0; i < total && running; i++) {
                 const t = i / FPS;
@@ -380,6 +394,9 @@
 
         function captureFrame(mediaTime) {
             lastFrameAt = performance.now();
+            const sig = frameSig();
+            if (sig !== null && sig === prevSig) dupCount++;
+            if (sig !== null) prevSig = sig;
             let result;
             try {
                 result = poseLandmarker.detectForVideo(video, tsFor(mediaTime));
@@ -388,14 +405,6 @@
 
             const lm = result.landmarks[0];
             const wl = (result.worldLandmarks && result.worldLandmarks[0]) || lm;
-
-            // Duplicate detection: if the wrists+shoulder haven't moved AT ALL since the
-            // previous sample, the browser served us the same picture again (keyframe snap).
-            const sig = lm[L_WRIST].x.toFixed(4) + ',' + lm[L_WRIST].y.toFixed(4) + ',' +
-                        lm[R_WRIST].x.toFixed(4) + ',' + lm[R_WRIST].y.toFixed(4) + ',' +
-                        lm[L_SHOULDER].x.toFixed(4);
-            if (sig === prevSig) dupCount++;
-            prevSig = sig;
 
             // Capture every frame where a person is detected — no strict all-joints gate.
             // Visibility is tracked per-metric so fast hands or a face-on angle don't get
@@ -453,6 +462,14 @@
             });
         }
         const winAvg = (arr, idx, r = 2) => avg(arr.slice(Math.max(0, idx - r), Math.min(arr.length, idx + r + 1)));
+        // Quadratic-vertex sub-frame refinement: given three samples around an extreme,
+        // return the fractional offset [-0.5, 0.5] of the true peak between frames.
+        function vertexOffset(y0, y1, y2) {
+            const denom = y0 - 2 * y1 + y2;
+            if (Math.abs(denom) < 1e-9) return 0;
+            const off = 0.5 * (y0 - y2) / denom;
+            return Math.max(-0.5, Math.min(0.5, off));
+        }
 
         async function finish(reason) {
             if (!running) return;
@@ -524,7 +541,21 @@
                 spine_angle_change: Math.round(winAvg(spSeries, impIdx) - winAvg(spSeries, takeIdx)),
             };
             metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
-            const back = top.t - addr.t, down = imp.t - top.t;
+
+            // Sub-frame timing: refine the exact moments of the top (minimum of the hand
+            // curve) and impact (peak downward velocity) between samples. This recovers
+            // the tempo precision that raw 20fps sampling quantizes away.
+            const dt = frames.length > 1 ? (frames[frames.length - 1].t - frames[0].t) / (frames.length - 1) : 0.05;
+            let topT = top.t;
+            if (topIdx > 0 && topIdx < frames.length - 1) {
+                topT += vertexOffset(y[topIdx - 1], y[topIdx], y[topIdx + 1]) * dt;
+            }
+            let impT = imp.t;
+            if (impIdx > topIdx + 1 && impIdx < frames.length - 1) {
+                const v = (i) => y[i] - y[i - 1];
+                impT += vertexOffset(-v(impIdx - 1), -v(impIdx), -v(impIdx + 1)) * dt;
+            }
+            const back = topT - addr.t, down = impT - topT;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
             log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + top.t.toFixed(2) + 's, impact: ' + imp.t.toFixed(2) + 's');
             log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
