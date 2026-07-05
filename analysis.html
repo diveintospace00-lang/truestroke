@@ -108,6 +108,15 @@
         let lastFrameAt = 0;
         let watchdog = null, stallTimer = null;
         let errorShown = false;
+        // Detection clock: derived from the video's own media time so identical clips
+        // produce identical tracker behavior. Offset keeps it monotonic across runs.
+        let tsOffset = 0, lastTs = -1;
+        function tsFor(mediaTime) {
+            let ts = Math.round(tsOffset + mediaTime * 1000);
+            if (ts <= lastTs) ts = lastTs + 1;
+            lastTs = ts;
+            return ts;
+        }
 
         function setStatus(title, text) {
             statusTitle.textContent = title;
@@ -227,6 +236,7 @@
             setStatus("Analyzing your swing…", "Measuring your swing frame by frame…");
             frames = [];
             running = true;
+            tsOffset = lastTs + 1000;   // new run: keep the detection clock monotonic
             let firstFrameSeen = false;
             window.__firstFrame = () => { firstFrameSeen = true; };
             watchdog = setTimeout(() => finish("watchdog"), 60000);
@@ -314,7 +324,7 @@
             lastFrameAt = performance.now();
             let result;
             try {
-                result = poseLandmarker.detectForVideo(video, performance.now());
+                result = poseLandmarker.detectForVideo(video, tsFor(mediaTime));
             } catch { return; }
             if (!result || !result.landmarks || result.landmarks.length === 0) return;
 
@@ -358,6 +368,25 @@
                 return avg(arr.slice(a, b));
             });
         }
+        // Make an angle series continuous (no ±180° wraparound jumps between frames).
+        function unwrap(arr) {
+            const out = [arr[0]];
+            for (let i = 1; i < arr.length; i++) {
+                let d = arr[i] - arr[i - 1];
+                while (d > 180) d -= 360;
+                while (d < -180) d += 360;
+                out.push(out[i - 1] + d);
+            }
+            return out;
+        }
+        // Median-of-5: removes isolated depth-flip spikes that averaging would blend in.
+        function median5(arr) {
+            return arr.map((_, i) => {
+                const w = arr.slice(Math.max(0, i - 2), Math.min(arr.length, i + 3)).slice().sort((a, b) => a - b);
+                return w[Math.floor(w.length / 2)];
+            });
+        }
+        const winAvg = (arr, idx, r = 2) => avg(arr.slice(Math.max(0, idx - r), Math.min(arr.length, idx + r + 1)));
 
         async function finish(reason) {
             if (!running) return;
@@ -418,10 +447,15 @@
             // How well were the torso joints seen? Drives the rotation-confidence note.
             const rotConf = Math.min(avg(frames.map(f => f.shVis)), avg(frames.map(f => f.hipVis)));
 
+            // Rotation series: unwrap (kill ±180 wraps) -> median (kill flip spikes) -> smooth.
+            const shSeries = smooth(median5(unwrap(frames.map(f => f.shoulderAngle))));
+            const hpSeries = smooth(median5(unwrap(frames.map(f => f.hipAngle))));
+            const spSeries = smooth(frames.map(f => f.spineAngle));
+
             const metrics = {
-                shoulder_turn: Math.round(Math.abs(angDiff(top.shoulderAngle, addr.shoulder))),
-                hip_rotation: Math.round(Math.abs(angDiff(top.hipAngle, addr.hip))),
-                spine_angle_change: Math.round(angDiff(imp.spineAngle, addr.spine)),
+                shoulder_turn: Math.round(Math.abs(winAvg(shSeries, topIdx) - winAvg(shSeries, takeIdx))),
+                hip_rotation: Math.round(Math.abs(winAvg(hpSeries, topIdx) - winAvg(hpSeries, takeIdx))),
+                spine_angle_change: Math.round(winAvg(spSeries, impIdx) - winAvg(spSeries, takeIdx)),
             };
             metrics.x_factor = metrics.shoulder_turn - metrics.hip_rotation;
             const back = top.t - addr.t, down = imp.t - top.t;
