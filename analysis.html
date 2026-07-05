@@ -243,6 +243,20 @@
             window.__firstFrame = () => { firstFrameSeen = true; };
             watchdog = setTimeout(() => finish("watchdog"), 60000);
 
+            // If the user tapped before the video reported its duration, WAIT for
+            // metadata (up to 5s) rather than silently falling back to the less
+            // accurate playback path. This race was possible because the button can
+            // appear on a failsafe timer before metadata arrives.
+            if (!isFinite(video.duration) || video.duration <= 0.3) {
+                log('Duration not ready yet — waiting for video metadata…');
+                await new Promise((resolve) => {
+                    const t = setTimeout(resolve, 5000);
+                    const onMeta = () => { clearTimeout(t); resolve(); };
+                    video.addEventListener('loadedmetadata', onMeta, { once: true });
+                    video.addEventListener('durationchange', onMeta, { once: true });
+                });
+            }
+
             if (isFinite(video.duration) && video.duration > 0.3) {
                 // DETERMINISTIC PATH: step through fixed timestamps. Same clip -> same
                 // frames -> same metrics, every run. Possible because the blob gives us
