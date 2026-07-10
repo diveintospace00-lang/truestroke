@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.2 (20fps + pixel dup-detect + sub-frame tempo)';
+        const APP_VERSION = 'v2.3 (skip dup frames + timestamp-aware interpolation)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -301,8 +301,9 @@
                 captureFrame(t);
                 if (i % 10 === 0) setStatus("Analyzing your swing…", "Measured " + Math.round((i / total) * 100) + "% of your swing…");
             }
-            log('Seek pass done: ' + frames.length + ' frames measured, ' + missed + ' seeks missed, ' + dupCount + ' duplicates.');
-            if (running && frames.length > 0 && dupCount / frames.length > 0.35) {
+            log('Seek pass done: ' + frames.length + ' unique frames kept, ' + missed + ' seeks missed, ' + dupCount + ' duplicates skipped.');
+            const attempts = frames.length + dupCount;
+            if (running && attempts > 0 && dupCount / attempts > 0.35) {
                 // Keyframe snapping confirmed: most seeks returned a repeated picture.
                 // Metrics from that staircase would be garbage — recapture via slow playback.
                 log('Seek snapping detected — switching to slow-playback capture…');
@@ -395,7 +396,7 @@
         function captureFrame(mediaTime) {
             lastFrameAt = performance.now();
             const sig = frameSig();
-            if (sig !== null && sig === prevSig) dupCount++;
+            if (sig !== null && sig === prevSig) { dupCount++; return; }   // repeated picture: no new information, skip it
             if (sig !== null) prevSig = sig;
             let result;
             try {
@@ -462,13 +463,15 @@
             });
         }
         const winAvg = (arr, idx, r = 2) => avg(arr.slice(Math.max(0, idx - r), Math.min(arr.length, idx + r + 1)));
-        // Quadratic-vertex sub-frame refinement: given three samples around an extreme,
-        // return the fractional offset [-0.5, 0.5] of the true peak between frames.
-        function vertexOffset(y0, y1, y2) {
-            const denom = y0 - 2 * y1 + y2;
-            if (Math.abs(denom) < 1e-9) return 0;
-            const off = 0.5 * (y0 - y2) / denom;
-            return Math.max(-0.5, Math.min(0.5, off));
+        // Timestamp-aware quadratic vertex: fits a parabola through three (t, y) samples
+        // with ARBITRARY spacing (frames are uneven once duplicates are skipped) and
+        // returns the time of the extreme, clamped to the middle sample's neighborhood.
+        function vertexTime(t0, y0, t1, y1, t2, y2) {
+            const a = (y0 - y1) * (t2 - t1), b = (y2 - y1) * (t1 - t0);
+            const denom = a + b;
+            if (Math.abs(denom) < 1e-9) return t1;
+            const tv = t1 + 0.5 * (a * (t2 - t1) - b * (t1 - t0)) / denom;
+            return Math.max(t0, Math.min(t2, tv));
         }
 
         async function finish(reason) {
@@ -521,8 +524,9 @@
 
             // Impact = fastest downward hand motion after the top (on the smoothed signal).
             let impIdx = topIdx, maxV = -Infinity;
+            const rate = (i) => (y[i] - y[i - 1]) / Math.max(1e-3, frames[i].t - frames[i - 1].t);
             for (let i = topIdx + 1; i < frames.length; i++) {
-                const v = y[i] - y[i - 1];
+                const v = rate(i);
                 if (v > maxV) { maxV = v; impIdx = i; }
             }
             const imp = frames[impIdx];
@@ -545,15 +549,21 @@
             // Sub-frame timing: refine the exact moments of the top (minimum of the hand
             // curve) and impact (peak downward velocity) between samples. This recovers
             // the tempo precision that raw 20fps sampling quantizes away.
-            const dt = frames.length > 1 ? (frames[frames.length - 1].t - frames[0].t) / (frames.length - 1) : 0.05;
             let topT = top.t;
             if (topIdx > 0 && topIdx < frames.length - 1) {
-                topT += vertexOffset(y[topIdx - 1], y[topIdx], y[topIdx + 1]) * dt;
+                topT = vertexTime(
+                    frames[topIdx - 1].t, y[topIdx - 1],
+                    frames[topIdx].t,     y[topIdx],
+                    frames[topIdx + 1].t, y[topIdx + 1]);
             }
             let impT = imp.t;
             if (impIdx > topIdx + 1 && impIdx < frames.length - 1) {
-                const v = (i) => y[i] - y[i - 1];
-                impT += vertexOffset(-v(impIdx - 1), -v(impIdx), -v(impIdx + 1)) * dt;
+                // vertex of the (downward) hand-speed curve, on midpoint times of each interval
+                const tm = (i) => (frames[i].t + frames[i - 1].t) / 2;
+                impT = vertexTime(
+                    tm(impIdx - 1), -rate(impIdx - 1),
+                    tm(impIdx),     -rate(impIdx),
+                    tm(impIdx + 1), -rate(impIdx + 1));
             }
             const back = topT - addr.t, down = impT - topT;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
