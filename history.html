@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Swings — TrueStroke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
+        .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
+        .nav-links a { text-decoration: none; color: var(--text-dark); font-size: 0.9rem; margin-left: 24px; }
+        .container { max-width: 800px; margin: 60px auto; padding: 0 20px; }
+        h1 { font-family: 'Playfair Display', serif; font-size: 2.5rem; color: var(--forest-green); margin-bottom: 8px; text-align: center; }
+        .subtext { color: var(--text-gray); margin-bottom: 40px; text-align: center; }
+        #configError { display: none; margin: 0 auto 30px; background: #fff7e6; border: 1px solid var(--gold); color: #6b5320; border-radius: 8px; padding: 16px 20px; font-size: 0.95rem; }
+        #configError code { background: #f0ead9; padding: 1px 5px; border-radius: 3px; }
+        .trend-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 24px; margin-bottom: 30px; display: none; }
+        .trend-card h2 { font-family: 'Playfair Display', serif; color: var(--forest-green); margin: 0 0 4px; font-size: 1.2rem; }
+        .trend-card .hint { font-size: 0.8rem; color: var(--text-gray); margin-bottom: 12px; }
+        .swing-card { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 22px 24px; margin-bottom: 16px; }
+        .swing-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+        .swing-date { font-weight: 600; color: var(--text-dark); }
+        .angle-badge { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--forest-green); border: 1px solid var(--gold); border-radius: 12px; padding: 2px 10px; }
+        .mrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 6px; }
+        .m { background: #faf8f3; border-radius: 6px; padding: 8px 12px; min-width: 84px; text-align: center; }
+        .m .v { font-family: 'Playfair Display', serif; font-size: 1.2rem; color: var(--forest-green); }
+        .m .l { font-size: 0.68rem; color: var(--text-gray); text-transform: uppercase; letter-spacing: 0.5px; }
+        .swing-summary { color: var(--text-gray); font-size: 0.92rem; line-height: 1.7; margin-top: 8px; }
+        .swing-links { margin-top: 10px; font-size: 0.88rem; }
+        .swing-links a { color: var(--forest-green); font-weight: 600; text-decoration: none; margin-right: 18px; }
+        #empty, #loading { text-align: center; color: var(--text-gray); padding: 60px 0; }
+        #empty a { color: var(--forest-green); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="index.html" class="logo">TrueStroke</a>
+        <div class="nav-links"><a href="dashboard.html">New Analysis</a></div>
+    </nav>
+    <div class="container">
+        <h1>My Swings</h1>
+        <p class="subtext">Every analyzed swing, newest first — watch your numbers move toward the ideal.</p>
+        <div id="configError"></div>
+
+        <div class="trend-card" id="trendCard">
+            <h2>Tempo Trend</h2>
+            <div class="hint">Ideal is 3.0 : 1 (gold line). Older → newer.</div>
+            <svg id="trendSvg" viewBox="0 0 600 140" width="100%" preserveAspectRatio="none"></svg>
+        </div>
+
+        <div id="loading">Loading your swings…</div>
+        <div id="empty" style="display:none;">No swings saved yet. <a href="dashboard.html">Analyze your first swing</a> and it will appear here.</div>
+        <div id="list"></div>
+    </div>
+
+    <script>
+        // ============================================================
+        // PASTE THE SAME SUPABASE CREDENTIALS AS dashboard.html
+        // ============================================================
+        const SUPABASE_URL = "https://ponmbdzsjkjnczckczyz.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN";
+        // ============================================================
+        // NOTE (pre-launch): there are no user accounts yet, so this page
+        // shows EVERY saved swing, from anyone using the site. Fine while
+        // you're the only tester — add auth before real customers arrive.
+        // ============================================================
+
+        const $ = (id) => document.getElementById(id);
+
+        function fail(msg) {
+            $("loading").style.display = "none";
+            $("configError").style.display = "block";
+            $("configError").innerHTML = msg;
+        }
+
+        async function load() {
+            if (SUPABASE_URL.includes("YOUR-PROJECT-REF") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
+                fail("<strong>Setup needed:</strong> open <code>history.html</code> and paste the same <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> you used in <code>dashboard.html</code>.");
+                return;
+            }
+            let rows;
+            try {
+                const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                const { data, error } = await sb
+                    .from("swing_analyses")
+                    .select("id, created_at, video_url, analysis_text, status")
+                    .order("created_at", { ascending: false })
+                    .limit(50);
+                if (error) throw error;
+                rows = data || [];
+            } catch (err) {
+                fail("Couldn't load swings: " + err.message);
+                return;
+            }
+
+            $("loading").style.display = "none";
+            if (!rows.length) { $("empty").style.display = "block"; return; }
+
+            const parsedRows = rows.map(r => {
+                let a = {};
+                try { a = JSON.parse(r.analysis_text || "{}"); } catch {}
+                return { ...r, a };
+            });
+
+            renderTrend(parsedRows);
+            $("list").innerHTML = parsedRows.map(cardHtml).join("");
+        }
+
+        function cardHtml(r) {
+            const m = (r.a && r.a.metrics) || {};
+            const when = new Date(r.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+            const angle = r.a.angle === "dtl" ? "Down-the-line" : r.a.angle === "face-on" ? "Face-on" : "Unknown angle";
+            const est = r.a.angle === "face-on" ? " (est.)" : "";
+            const metricHtml = [
+                [m.tempo_ratio !== undefined ? m.tempo_ratio + " : 1" : "—", "Tempo"],
+                [m.spine_angle_change !== undefined ? m.spine_angle_change + "°" : "—", "Spine"],
+                [m.shoulder_turn !== undefined ? m.shoulder_turn + "°" : "—", "Shoulder" + est],
+                [m.hip_rotation !== undefined ? m.hip_rotation + "°" : "—", "Hip" + est],
+                [m.x_factor !== undefined ? m.x_factor + "°" : "—", "X-Factor" + est],
+            ].map(([v, l]) => `<div class="m"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+            const summary = r.a.summary ? `<div class="swing-summary">${escapeHtml(r.a.summary)}</div>` : "";
+            const video = r.video_url ? `<a href="${r.video_url}" target="_blank" rel="noopener">▶ Watch swing</a>` : "";
+            return `<div class="swing-card">
+                <div class="swing-head"><span class="swing-date">${when}</span><span class="angle-badge">${angle}</span></div>
+                <div class="mrow">${metricHtml}</div>
+                ${summary}
+                <div class="swing-links">${video}</div>
+            </div>`;
+        }
+
+        function renderTrend(rows) {
+            const pts = rows
+                .filter(r => r.a && r.a.metrics && typeof r.a.metrics.tempo_ratio === "number" && r.a.metrics.tempo_ratio > 0)
+                .map(r => ({ t: new Date(r.created_at).getTime(), v: r.a.metrics.tempo_ratio }))
+                .sort((a, b) => a.t - b.t);   // oldest -> newest
+            if (pts.length < 2) return;
+
+            const W = 600, H = 140, PAD = 14;
+            const vs = pts.map(p => p.v);
+            const lo = Math.min(1.5, Math.min(...vs) - 0.3), hi = Math.max(4, Math.max(...vs) + 0.3);
+            const x = (i) => PAD + (i / (pts.length - 1)) * (W - 2 * PAD);
+            const y = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
+
+            const ideal = y(3.0);
+            const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+            const dots = pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="#1a3c34"/>`).join("");
+            $("trendSvg").innerHTML =
+                `<line x1="${PAD}" y1="${ideal}" x2="${W - PAD}" y2="${ideal}" stroke="#c5a059" stroke-width="1.5" stroke-dasharray="6,6"/>` +
+                `<polyline points="${line}" fill="none" stroke="#1a3c34" stroke-width="2.5"/>` + dots;
+            $("trendCard").style.display = "block";
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        load();
+    </script>
+</body>
+</html>
