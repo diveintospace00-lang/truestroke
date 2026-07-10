@@ -33,7 +33,7 @@
     </style>
 </head>
 <body>
-    <nav><a href="index.html" class="logo">TrueStroke</a></nav>
+    <nav><a href="index.html" class="logo">TrueStroke</a><a href="history.html" style="text-decoration:none;color:var(--text-dark);font-size:0.9rem;">My Swings</a></nav>
     <div class="container">
         <div class="loader" id="loader">
             <div class="spinner"></div>
@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.3 (skip dup frames + timestamp-aware interpolation)';
+        const APP_VERSION = 'v2.4 (sub-frame takeaway; engine frozen)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -506,6 +506,17 @@
             for (let i = topIdx; i >= 1; i--) {
                 if (calmY - y[i] < rise) { takeIdx = i; break; }
             }
+            // Sub-frame takeaway: the threshold is crossed BETWEEN takeIdx (calm) and
+            // takeIdx+1 (rising) — linearly interpolate the exact crossing time so the
+            // backswing clock doesn't start on a 50ms grid.
+            let takeT = frames[takeIdx].t;
+            if (takeIdx + 1 <= topIdx) {
+                const below = calmY - y[takeIdx], above = calmY - y[takeIdx + 1];
+                if (above > below) {
+                    const frac = Math.max(0, Math.min(1, (rise - below) / (above - below)));
+                    takeT = frames[takeIdx].t + frac * (frames[takeIdx + 1].t - frames[takeIdx].t);
+                }
+            }
 
             const headFrames = frames.slice(Math.max(0, takeIdx - 4), takeIdx + 1);
             const addr = {
@@ -513,7 +524,7 @@
                 hip: avg(headFrames.map(f => f.hipAngle)),
                 spine: avg(headFrames.map(f => f.spineAngle)),
                 handY: calmY,
-                t: frames[takeIdx].t,
+                t: takeT,
             };
 
             if (topIdx < 0 || (calmY - topY) < 0.03) {
@@ -577,7 +588,7 @@
                 const r = await fetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ metrics, angle: cameraAngle }),
+                    body: JSON.stringify({ metrics, angle: cameraAngle, video_url: videoUrl }),
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.error || "Analysis failed");
