@@ -142,6 +142,7 @@ FLAW: <second improvement area, only if genuinely warranted>`;
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = parseCoaching(raw);
         parsed.drills = pickDrills(detectFlaws(metrics, angle));   // drills come from the curated library, never the model
+        parsed.saved = await saveAnalysis(body.video_url, angle, metrics, parsed);
         return res.status(200).json(parsed);
     } catch (error) {
         const msg = error.name === 'AbortError' ? 'The AI coach timed out. Please try again.' : error.message;
@@ -200,6 +201,41 @@ function assess(m, angle) {
     lines.push(`- Spine angle change ${m.spine_angle_change}° — VERDICT: ${pv}`);
 
     return lines.join('\n');
+}
+
+// Persist the analysis to Supabase (swing_analyses table) so users get history.
+// Uses SUPABASE_URL + SUPABASE_ANON_KEY env vars (Vercel -> Settings -> Environment
+// Variables). Inserts are allowed by the table's RLS policy. Never fails the
+// response: if saving breaks, the user still gets their report.
+async function saveAnalysis(videoUrl, angle, metrics, parsed) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY;
+    if (!url || !key) return false;
+    try {
+        const resp = await fetch(url.replace(/\/$/, '') + '/rest/v1/swing_analyses', {
+            method: 'POST',
+            headers: {
+                'apikey': key,
+                'Authorization': 'Bearer ' + key,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal',
+            },
+            body: JSON.stringify({
+                video_url: videoUrl || null,
+                analysis_text: JSON.stringify({
+                    angle,
+                    metrics,
+                    summary: parsed.summary,
+                    flaws: parsed.flaws,
+                    drills: parsed.drills,
+                }),
+                status: 'complete',
+            }),
+        });
+        return resp.ok;
+    } catch {
+        return false;
+    }
 }
 
 // Line-based parse: immune to stray quotes/JSON breakage from the model.
