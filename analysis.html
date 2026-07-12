@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.7 (impact crossing on median curve at 90% return)';
+        const APP_VERSION = 'v2.8 (impact = position peak + parabola fit)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -534,33 +534,17 @@
             const top = frames[topIdx];
 
             // Impact = fastest downward hand motion after the top (on the smoothed signal).
-            // IMPACT: the moment the hands descend back toward address height.
-            // Two subtleties learned the hard way: (1) the mean-smoothed curve CLIPS the
-            // brief sharp peak at impact, so hands "never arrive" in that data — detect on
-            // a median-filtered curve instead, which removes spikes but preserves peaks;
-            // (2) cross at 90% of the return, on the steep part every swing reaches,
-            // not at the very tip of the peak.
+            // IMPACT: the hands' LOWEST recorded point after the top — the peak of the
+            // position curve. No threshold to clear (a maximum always exists, however
+            // much tracker lag undershoots it), and position peaks are sharp where the
+            // speed curve was a plateau. Searched within 0.8s of the top so lowering
+            // the club at the end of a clip can't out-peak the real impact.
             const ySharp = median5(frames.map(f => f.handY));
-            const impLevel = topY + 0.9 * (calmY - topY);
-            const rate = (i) => (y[i] - y[i - 1]) / Math.max(1e-3, frames[i].t - frames[i - 1].t);
-            let impIdx = -1, impCrossT = null;
-            for (let i = topIdx + 1; i < frames.length; i++) {
-                if (ySharp[i] >= impLevel) {
-                    impIdx = i;
-                    const frac = Math.max(0, Math.min(1, (impLevel - ySharp[i - 1]) / Math.max(1e-6, ySharp[i] - ySharp[i - 1])));
-                    impCrossT = frames[i - 1].t + frac * (frames[i].t - frames[i - 1].t);
-                    break;
-                }
+            let impIdx = -1, bestY = -Infinity;
+            for (let i = topIdx + 1; i < frames.length && frames[i].t <= top.t + 0.8; i++) {
+                if (ySharp[i] > bestY) { bestY = ySharp[i]; impIdx = i; }
             }
-            if (impIdx < 0) {
-                // Clip may end right at contact — fall back to peak downward hand speed.
-                let maxV = -Infinity;
-                impIdx = Math.min(topIdx + 1, frames.length - 1);
-                for (let i = topIdx + 1; i < frames.length; i++) {
-                    const v = rate(i);
-                    if (v > maxV) { maxV = v; impIdx = i; }
-                }
-            }
+            if (impIdx < 0) impIdx = Math.min(topIdx + 1, frames.length - 1);
             const imp = frames[impIdx];
 
             // How well were the torso joints seen? Drives the rotation-confidence note.
@@ -588,18 +572,16 @@
                     frames[topIdx].t,     y[topIdx],
                     frames[topIdx + 1].t, y[topIdx + 1]);
             }
-            let impT = impCrossT !== null ? impCrossT : imp.t;
-            if (impCrossT === null && impIdx > topIdx + 1 && impIdx < frames.length - 1) {
-                // fallback path: vertex of the (downward) hand-speed curve
-                const tm = (i) => (frames[i].t + frames[i - 1].t) / 2;
+            let impT = imp.t;
+            if (impIdx >= 1 && impIdx < frames.length - 1) {
                 impT = vertexTime(
-                    tm(impIdx - 1), -rate(impIdx - 1),
-                    tm(impIdx),     -rate(impIdx),
-                    tm(impIdx + 1), -rate(impIdx + 1));
+                    frames[impIdx - 1].t, ySharp[impIdx - 1],
+                    frames[impIdx].t,     ySharp[impIdx],
+                    frames[impIdx + 1].t, ySharp[impIdx + 1]);
             }
             const back = topT - addr.t, down = impT - topT;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
-            log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + topT.toFixed(2) + 's, impact: ' + impT.toFixed(2) + 's' + (impCrossT === null ? ' (fallback method)' : ''));
+            log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + topT.toFixed(2) + 's, impact: ' + impT.toFixed(2) + 's');
             log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
 
             renderMetrics(metrics, rotConf);
