@@ -142,7 +142,9 @@ FLAW: <second improvement area, only if genuinely warranted>`;
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = parseCoaching(raw);
         parsed.drills = pickDrills(detectFlaws(metrics, angle));   // drills come from the curated library, never the model
-        parsed.saved = await saveAnalysis(body.video_url, angle, metrics, parsed);
+        const save = await saveAnalysis(body.video_url, angle, metrics, parsed);
+        parsed.saved = save.ok;
+        if (!save.ok) parsed.save_error = save.reason;
         return res.status(200).json(parsed);
     } catch (error) {
         const msg = error.name === 'AbortError' ? 'The AI coach timed out. Please try again.' : error.message;
@@ -210,7 +212,7 @@ function assess(m, angle) {
 async function saveAnalysis(videoUrl, angle, metrics, parsed) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_ANON_KEY;
-    if (!url || !key) return false;
+    if (!url || !key) return { ok: false, reason: 'SUPABASE_URL / SUPABASE_ANON_KEY are not set in Vercel env vars (add them, then redeploy)' };
     try {
         const resp = await fetch(url.replace(/\/$/, '') + '/rest/v1/swing_analyses', {
             method: 'POST',
@@ -232,9 +234,13 @@ async function saveAnalysis(videoUrl, angle, metrics, parsed) {
                 status: 'complete',
             }),
         });
-        return resp.ok;
-    } catch {
-        return false;
+        if (!resp.ok) {
+            const t = await resp.text().catch(() => '');
+            return { ok: false, reason: 'Supabase rejected the insert (HTTP ' + resp.status + '): ' + t.slice(0, 200) };
+        }
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, reason: e.message };
     }
 }
 
