@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.4 (sub-frame takeaway; engine frozen)';
+        const APP_VERSION = 'v2.5 (save diagnostics)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -592,6 +592,7 @@
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.error || "Analysis failed");
+                log('Saved to history: ' + (data.saved ? 'yes ✓' : 'NO — ' + (data.save_error || 'unknown reason')));
                 renderReport(data);
             } catch (err) {
                 log('LLM call failed: ' + err.message);
