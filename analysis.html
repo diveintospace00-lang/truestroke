@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.6 (impact via address-height crossing)';
+        const APP_VERSION = 'v2.7 (impact crossing on median curve at 90% return)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -534,16 +534,20 @@
             const top = frames[topIdx];
 
             // Impact = fastest downward hand motion after the top (on the smoothed signal).
-            // IMPACT: the moment the hands descend back to address height (calmY).
-            // At impact the hands are essentially where they were at address, and this
-            // level-crossing is steep — unlike peak hand speed, whose flat-topped curve
-            // let the detected impact wander ±150ms run to run.
+            // IMPACT: the moment the hands descend back toward address height.
+            // Two subtleties learned the hard way: (1) the mean-smoothed curve CLIPS the
+            // brief sharp peak at impact, so hands "never arrive" in that data — detect on
+            // a median-filtered curve instead, which removes spikes but preserves peaks;
+            // (2) cross at 90% of the return, on the steep part every swing reaches,
+            // not at the very tip of the peak.
+            const ySharp = median5(frames.map(f => f.handY));
+            const impLevel = topY + 0.9 * (calmY - topY);
             const rate = (i) => (y[i] - y[i - 1]) / Math.max(1e-3, frames[i].t - frames[i - 1].t);
             let impIdx = -1, impCrossT = null;
             for (let i = topIdx + 1; i < frames.length; i++) {
-                if (y[i] >= calmY) {
+                if (ySharp[i] >= impLevel) {
                     impIdx = i;
-                    const frac = Math.max(0, Math.min(1, (calmY - y[i - 1]) / Math.max(1e-6, y[i] - y[i - 1])));
+                    const frac = Math.max(0, Math.min(1, (impLevel - ySharp[i - 1]) / Math.max(1e-6, ySharp[i] - ySharp[i - 1])));
                     impCrossT = frames[i - 1].t + frac * (frames[i].t - frames[i - 1].t);
                     break;
                 }
