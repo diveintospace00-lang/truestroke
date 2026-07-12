@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.5 (save diagnostics)';
+        const APP_VERSION = 'v2.6 (impact via address-height crossing)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -534,11 +534,28 @@
             const top = frames[topIdx];
 
             // Impact = fastest downward hand motion after the top (on the smoothed signal).
-            let impIdx = topIdx, maxV = -Infinity;
+            // IMPACT: the moment the hands descend back to address height (calmY).
+            // At impact the hands are essentially where they were at address, and this
+            // level-crossing is steep — unlike peak hand speed, whose flat-topped curve
+            // let the detected impact wander ±150ms run to run.
             const rate = (i) => (y[i] - y[i - 1]) / Math.max(1e-3, frames[i].t - frames[i - 1].t);
+            let impIdx = -1, impCrossT = null;
             for (let i = topIdx + 1; i < frames.length; i++) {
-                const v = rate(i);
-                if (v > maxV) { maxV = v; impIdx = i; }
+                if (y[i] >= calmY) {
+                    impIdx = i;
+                    const frac = Math.max(0, Math.min(1, (calmY - y[i - 1]) / Math.max(1e-6, y[i] - y[i - 1])));
+                    impCrossT = frames[i - 1].t + frac * (frames[i].t - frames[i - 1].t);
+                    break;
+                }
+            }
+            if (impIdx < 0) {
+                // Clip may end right at contact — fall back to peak downward hand speed.
+                let maxV = -Infinity;
+                impIdx = Math.min(topIdx + 1, frames.length - 1);
+                for (let i = topIdx + 1; i < frames.length; i++) {
+                    const v = rate(i);
+                    if (v > maxV) { maxV = v; impIdx = i; }
+                }
             }
             const imp = frames[impIdx];
 
@@ -567,9 +584,9 @@
                     frames[topIdx].t,     y[topIdx],
                     frames[topIdx + 1].t, y[topIdx + 1]);
             }
-            let impT = imp.t;
-            if (impIdx > topIdx + 1 && impIdx < frames.length - 1) {
-                // vertex of the (downward) hand-speed curve, on midpoint times of each interval
+            let impT = impCrossT !== null ? impCrossT : imp.t;
+            if (impCrossT === null && impIdx > topIdx + 1 && impIdx < frames.length - 1) {
+                // fallback path: vertex of the (downward) hand-speed curve
                 const tm = (i) => (frames[i].t + frames[i - 1].t) / 2;
                 impT = vertexTime(
                     tm(impIdx - 1), -rate(impIdx - 1),
@@ -578,7 +595,7 @@
             }
             const back = topT - addr.t, down = impT - topT;
             metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
-            log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + top.t.toFixed(2) + 's, impact: ' + imp.t.toFixed(2) + 's');
+            log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + topT.toFixed(2) + 's, impact: ' + impT.toFixed(2) + 's' + (impCrossT === null ? ' (fallback method)' : ''));
             log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
 
             renderMetrics(metrics, rotConf);
