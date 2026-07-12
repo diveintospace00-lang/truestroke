@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.8 (impact = position peak + parabola fit)';
+        const APP_VERSION = 'v2.9 (impact window = 0.45s physiological bound)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -537,11 +537,13 @@
             // IMPACT: the hands' LOWEST recorded point after the top — the peak of the
             // position curve. No threshold to clear (a maximum always exists, however
             // much tracker lag undershoots it), and position peaks are sharp where the
-            // speed curve was a plateau. Searched within 0.8s of the top so lowering
-            // the club at the end of a clip can't out-peak the real impact.
+            // speed curve was a plateau. Search window: 0.45s after the top — the
+            // physiological maximum for a human downswing (pros ~0.25s, slowest
+            // amateurs ~0.4s) — so lowering the club at the end of a clip, which
+            // produces an even lower hand position than impact, can't be selected.
             const ySharp = median5(frames.map(f => f.handY));
             let impIdx = -1, bestY = -Infinity;
-            for (let i = topIdx + 1; i < frames.length && frames[i].t <= top.t + 0.8; i++) {
+            for (let i = topIdx + 1; i < frames.length && frames[i].t <= top.t + 0.45; i++) {
                 if (ySharp[i] > bestY) { bestY = ySharp[i]; impIdx = i; }
             }
             if (impIdx < 0) impIdx = Math.min(topIdx + 1, frames.length - 1);
