@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v2.9 (impact window = 0.45s physiological bound)';
+        const APP_VERSION = 'v3.0 (ENGINE FROZEN — honest tempo display)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -615,7 +615,7 @@
                 [m.x_factor + "°", "X-Factor" + (cameraAngle === "face-on" ? " (est.)" : "")],
             ];
             const core = [
-                [m.tempo_ratio + " : 1", "Tempo"],
+                ["≈ " + m.tempo_ratio + " : 1", "Tempo"],
                 [m.spine_angle_change + "°", "Spine change"],
             ];
             const items = cameraAngle === "face-on" ? core.concat(rot) : [core[0]].concat(rot, [core[1]]);
@@ -627,7 +627,9 @@
             } else if (rotConf !== undefined && rotConf < 0.6) {
                 note = "Some joints were hard to see in this clip, so turn numbers may be rough — better lighting and full body in frame will sharpen them.";
             }
-            if (note) strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">${note}</div>`;
+            const tempoNote = "Tempo is measured to roughly ±0.4 from a single camera — treat small run-to-run differences as noise.";
+            note = note ? note + " " + tempoNote : tempoNote;
+            strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">${note}</div>`;
             strip.style.display = "flex";
         }
         function renderReport(data) {
