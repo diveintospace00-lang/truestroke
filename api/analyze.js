@@ -38,8 +38,6 @@ const DRILL_LIBRARY = [
 // Face-on rotation flaws are suppressed (depth estimates, not coachable numbers).
 function detectFlaws(m, angle) {
     const flaws = [];
-    if (m.tempo_ratio < 2.2) flaws.push('tempo_quick');
-    else if (m.tempo_ratio > 4.2) flaws.push('tempo_slow');
     if (Math.abs(m.spine_angle_change) > 16) flaws.push('posture_loss');
     if (angle !== 'face-on') {
         if (m.shoulder_turn < 75) flaws.push('shoulder_restricted');
@@ -165,17 +163,12 @@ function assess(m, angle) {
         return 'ESTIMATE ONLY — outside the typical range, but measured face-on where rotation is unreliable; mention at most as a side note, NEVER as a primary flaw (' + verdict + ')';
     };
 
-    // Tempo bands are wide on purpose: single-camera tempo is measured to about
-    // ±0.4, so only clearly-out values get coached. Never narrow these without
-    // improving the measurement first.
-    const t = m.tempo_ratio;
-    let tv;
-    if (t >= 2.3 && t <= 3.9) tv = 'GOOD — in the healthy range around the ideal 3:1';
-    else if (t >= 1.9 && t < 2.3) tv = 'WATCH — downswing looks a touch rushed vs the ideal 3:1';
-    else if (t > 3.9 && t <= 4.4) tv = 'WATCH — backswing looks a touch long vs the ideal 3:1';
-    else if (t < 1.9) tv = 'NEEDS WORK — downswing is rushed (ideal ~3:1)';
-    else tv = 'NEEDS WORK — tempo is sluggish (ideal ~3:1)';
-    lines.push(`- Tempo ${t}:1 — VERDICT: ${tv}`);
+    // Tempo ratio retired from coaching: single-camera timing of the ~0.35s
+    // downswing proved noisy to ~±1, so no verdict is drawn from it. Backswing
+    // duration IS reliable (±0.02s) and is reported as context, not judged.
+    if (typeof m.back_time === 'number' && m.back_time > 0) {
+        lines.push(`- Backswing duration ${m.back_time}s — VERDICT: CONTEXT ONLY — reliable measurement, no ideal target; do not critique it`);
+    }
 
     const st = m.shoulder_turn;
     let sv;
