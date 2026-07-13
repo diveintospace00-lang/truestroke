@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v3.0 (ENGINE FROZEN — honest tempo display)';
+        const APP_VERSION = 'v3.1 (slow-motion capture primary — tempo\'s last chance)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -274,18 +274,16 @@
                 });
             }
 
-            if (isFinite(video.duration) && video.duration > 0.3) {
-                // DETERMINISTIC PATH: step through fixed timestamps. Same clip -> same
-                // frames -> same metrics, every run. Possible because the blob gives us
-                // a known duration (the original iOS Infinity-duration bug doesn't
-                // apply to local blob data).
-                log('Deterministic seek analysis: ' + video.duration.toFixed(2) + 's clip');
-                await seekAnalyze();
-            } else {
-                // Fallback if duration is somehow unknown: old playback method.
-                log('Duration unknown — falling back to playback analysis (less repeatable).');
-                await playbackAnalyze(firstFrameSeen);
-            }
+            // PRIMARY: slow-motion playback capture. Samples every decoded frame at the
+            // video's NATIVE frame rate (30/60fps — vs the 20fps seek grid), and the
+            // tracker follows continuous half-speed motion far better than 50ms seek
+            // jumps — both matter most in the downswing, where tempo noise lived.
+            log('Slow-motion capture analysis' + (isFinite(video.duration) ? ' (' + video.duration.toFixed(2) + 's clip)' : ''));
+            lastFrameAt = performance.now();
+            stallTimer = setInterval(() => {
+                if (running && frames.length > 0 && performance.now() - lastFrameAt > 2000) finish("stall");
+            }, 500);
+            await slowPlaybackAnalyze();
         });
 
         async function seekAnalyze() {
