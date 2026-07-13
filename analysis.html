@@ -91,7 +91,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v3.1 (slow-motion capture primary — tempo\'s last chance)';
+        const APP_VERSION = 'v3.2 (seek engine restored; tempo ratio retired, backswing time shipped)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -274,16 +274,18 @@
                 });
             }
 
-            // PRIMARY: slow-motion playback capture. Samples every decoded frame at the
-            // video's NATIVE frame rate (30/60fps — vs the 20fps seek grid), and the
-            // tracker follows continuous half-speed motion far better than 50ms seek
-            // jumps — both matter most in the downswing, where tempo noise lived.
-            log('Slow-motion capture analysis' + (isFinite(video.duration) ? ' (' + video.duration.toFixed(2) + 's clip)' : ''));
-            lastFrameAt = performance.now();
-            stallTimer = setInterval(() => {
-                if (running && frames.length > 0 && performance.now() - lastFrameAt > 2000) finish("stall");
-            }, 500);
-            await slowPlaybackAnalyze();
+            if (isFinite(video.duration) && video.duration > 0.3) {
+                // DETERMINISTIC PATH: step through fixed timestamps. Same clip -> same
+                // frames -> same metrics, every run. Possible because the blob gives us
+                // a known duration (the original iOS Infinity-duration bug doesn't
+                // apply to local blob data).
+                log('Deterministic seek analysis: ' + video.duration.toFixed(2) + 's clip');
+                await seekAnalyze();
+            } else {
+                // Fallback if duration is somehow unknown: old playback method.
+                log('Duration unknown — falling back to playback analysis (less repeatable).');
+                await playbackAnalyze(firstFrameSeen);
+            }
         });
 
         async function seekAnalyze() {
@@ -580,7 +582,8 @@
                     frames[impIdx + 1].t, ySharp[impIdx + 1]);
             }
             const back = topT - addr.t, down = impT - topT;
-            metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;
+            metrics.back_time = Math.round(back * 100) / 100;   // stable to ~±0.02s — the reliable timing metric
+            metrics.tempo_ratio = down > 0.01 ? +(back / down).toFixed(1) : 0;  // still computed & saved; too noisy (±1) to display
             log('Phases — takeaway: ' + addr.t.toFixed(2) + 's, top: ' + topT.toFixed(2) + 's, impact: ' + impT.toFixed(2) + 's');
             log('Metrics: ' + JSON.stringify(metrics) + ' | rotConf=' + rotConf.toFixed(2));
 
@@ -613,7 +616,7 @@
                 [m.x_factor + "°", "X-Factor" + (cameraAngle === "face-on" ? " (est.)" : "")],
             ];
             const core = [
-                ["≈ " + m.tempo_ratio + " : 1", "Tempo"],
+                [m.back_time.toFixed(1) + "s", "Backswing"],
                 [m.spine_angle_change + "°", "Spine change"],
             ];
             const items = cameraAngle === "face-on" ? core.concat(rot) : [core[0]].concat(rot, [core[1]]);
@@ -625,9 +628,7 @@
             } else if (rotConf !== undefined && rotConf < 0.6) {
                 note = "Some joints were hard to see in this clip, so turn numbers may be rough — better lighting and full body in frame will sharpen them.";
             }
-            const tempoNote = "Tempo is measured to roughly ±0.4 from a single camera — treat small run-to-run differences as noise.";
-            note = note ? note + " " + tempoNote : tempoNote;
-            strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">${note}</div>`;
+            if (note) strip.innerHTML += `<div style="flex-basis:100%;font-size:0.8rem;color:var(--text-gray);margin-top:6px;">${note}</div>`;
             strip.style.display = "flex";
         }
         function renderReport(data) {
