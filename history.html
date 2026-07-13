@@ -117,7 +117,9 @@
             const angle = r.a.angle === "dtl" ? "Down-the-line" : r.a.angle === "face-on" ? "Face-on" : "Unknown angle";
             const est = r.a.angle === "face-on" ? " (est.)" : "";
             const metricHtml = [
-                [m.tempo_ratio !== undefined ? m.tempo_ratio + " : 1" : "—", "Tempo"],
+                (typeof m.back_time === "number" && m.back_time > 0)
+                    ? [m.back_time.toFixed(1) + "s", "Backswing"]
+                    : [m.tempo_ratio !== undefined ? m.tempo_ratio + " : 1" : "—", "Tempo"],
                 [m.spine_angle_change !== undefined ? m.spine_angle_change + "°" : "—", "Spine"],
                 [m.shoulder_turn !== undefined ? m.shoulder_turn + "°" : "—", "Shoulder" + est],
                 [m.hip_rotation !== undefined ? m.hip_rotation + "°" : "—", "Hip" + est],
@@ -134,23 +136,32 @@
         }
 
         function renderTrend(rows) {
-            const pts = rows
+            const backPts = rows
+                .filter(r => r.a && r.a.metrics && typeof r.a.metrics.back_time === "number" && r.a.metrics.back_time > 0)
+                .map(r => ({ t: new Date(r.created_at).getTime(), v: r.a.metrics.back_time }));
+            const usingBack = backPts.length >= 2;
+            const pts = (usingBack ? backPts : rows
                 .filter(r => r.a && r.a.metrics && typeof r.a.metrics.tempo_ratio === "number" && r.a.metrics.tempo_ratio > 0)
-                .map(r => ({ t: new Date(r.created_at).getTime(), v: r.a.metrics.tempo_ratio }))
+                .map(r => ({ t: new Date(r.created_at).getTime(), v: r.a.metrics.tempo_ratio })))
                 .sort((a, b) => a.t - b.t);   // oldest -> newest
             if (pts.length < 2) return;
+            document.querySelector("#trendCard h2").textContent = usingBack ? "Backswing Time Trend" : "Tempo Trend";
+            document.querySelector("#trendCard .hint").textContent = usingBack
+                ? "Consistency is the goal — a repeatable backswing builds a repeatable swing. Older → newer."
+                : "Ideal is 3.0 : 1 (gold line). Older → newer.";
 
             const W = 600, H = 140, PAD = 14;
             const vs = pts.map(p => p.v);
-            const lo = Math.min(1.5, Math.min(...vs) - 0.3), hi = Math.max(4, Math.max(...vs) + 0.3);
+            const lo = usingBack ? Math.min(...vs) - 0.15 : Math.min(1.5, Math.min(...vs) - 0.3);
+            const hi = usingBack ? Math.max(...vs) + 0.15 : Math.max(4, Math.max(...vs) + 0.3);
             const x = (i) => PAD + (i / (pts.length - 1)) * (W - 2 * PAD);
             const y = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
 
-            const ideal = y(3.0);
             const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
             const dots = pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="#1a3c34"/>`).join("");
-            $("trendSvg").innerHTML =
-                `<line x1="${PAD}" y1="${ideal}" x2="${W - PAD}" y2="${ideal}" stroke="#c5a059" stroke-width="1.5" stroke-dasharray="6,6"/>` +
+            const idealLine = usingBack ? "" :
+                `<line x1="${PAD}" y1="${y(3.0)}" x2="${W - PAD}" y2="${y(3.0)}" stroke="#c5a059" stroke-width="1.5" stroke-dasharray="6,6"/>`;
+            $("trendSvg").innerHTML = idealLine +
                 `<polyline points="${line}" fill="none" stroke="#1a3c34" stroke-width="2.5"/>` + dots;
             $("trendCard").style.display = "block";
         }
