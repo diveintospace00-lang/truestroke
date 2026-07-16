@@ -93,6 +93,10 @@ export default async function handler(req, res) {
     if (!metrics || typeof metrics !== 'object') {
         return res.status(400).json({ error: 'Missing "metrics" in request body.' });
     }
+    // Caller's Supabase access token: the insert runs AS the user, so the
+    // database's row-security guarantees the row belongs to them.
+    const authHeader = req.headers['authorization'] || '';
+    const userToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     const angle = body.angle === 'face-on' || body.angle === 'dtl' ? body.angle : 'unknown';
     const angleContext = angle === 'face-on'
         ? 'The video was filmed FACE-ON (camera facing the golfer). At this angle, tempo and spine/posture numbers are reliable, but shoulder/hip rotation values are rough estimates — do NOT build your primary critique on exact rotation degrees. Lead with tempo and posture; mention rotation only directionally.'
@@ -140,7 +144,7 @@ FLAW: <second improvement area, only if genuinely warranted>`;
         const raw = data.choices?.[0]?.message?.content || '';
         const parsed = parseCoaching(raw);
         parsed.drills = pickDrills(detectFlaws(metrics, angle));   // drills come from the curated library, never the model
-        const save = await saveAnalysis(body.video_url, angle, metrics, parsed);
+        const save = await saveAnalysis(body.video_url, angle, metrics, parsed, userToken, body.user_id);
         parsed.saved = save.ok;
         if (!save.ok) parsed.save_error = save.reason;
         return res.status(200).json(parsed);
@@ -205,20 +209,22 @@ function assess(m, angle) {
 // Uses SUPABASE_URL + SUPABASE_ANON_KEY env vars (Vercel -> Settings -> Environment
 // Variables). Inserts are allowed by the table's RLS policy. Never fails the
 // response: if saving breaks, the user still gets their report.
-async function saveAnalysis(videoUrl, angle, metrics, parsed) {
+async function saveAnalysis(videoUrl, angle, metrics, parsed, userToken, userId) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_ANON_KEY;
     if (!url || !key) return { ok: false, reason: 'SUPABASE_URL / SUPABASE_ANON_KEY are not set in Vercel env vars (add them, then redeploy)' };
+    if (!userToken || !userId) return { ok: false, reason: 'Not signed in — analysis was not saved to history' };
     try {
         const resp = await fetch(url.replace(/\/$/, '') + '/rest/v1/swing_analyses', {
             method: 'POST',
             headers: {
                 'apikey': key,
-                'Authorization': 'Bearer ' + key,
+                'Authorization': 'Bearer ' + userToken,
                 'Content-Type': 'application/json',
                 'Prefer': 'return=minimal',
             },
             body: JSON.stringify({
+                user_id: userId,
                 video_url: videoUrl || null,
                 analysis_text: JSON.stringify({
                     angle,
