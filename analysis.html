@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
     <style>
         :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
@@ -91,7 +93,7 @@
 
         window.__moduleStarted = true;
         const log = (m) => window.__log && window.__log(m);
-        const APP_VERSION = 'v3.2 (seek engine restored; tempo ratio retired, backswing time shipped)';
+        const APP_VERSION = 'v4.0 (accounts + private storage)';
         log('Module loaded ✓ — engine ' + APP_VERSION);
 
         const $ = (id) => document.getElementById(id);
@@ -156,15 +158,26 @@
         }
 
         const urlParams = new URLSearchParams(location.search);
-        const videoUrl = urlParams.get("video");
-        const cameraAngle = urlParams.get("angle") || "unknown";   // "face-on" | "dtl" 
+        const videoPath = urlParams.get("path");
+        const cameraAngle = urlParams.get("angle") || "unknown";   // "face-on" | "dtl"
+        const sbClient = (window.TS_CONFIG && !window.TS_CONFIG.SUPABASE_URL.includes("YOUR-PROJECT-REF"))
+            ? window.supabase.createClient(window.TS_CONFIG.SUPABASE_URL, window.TS_CONFIG.SUPABASE_ANON_KEY)
+            : null;
+        let authSession = null;
 
         async function init() {
-            if (!videoUrl) {
+            if (!sbClient) {
+                showError("Setup needed: paste your Supabase credentials into <code>config.js</code>.");
+                return;
+            }
+            const { data } = await sbClient.auth.getSession();
+            if (!data.session) { location.href = "login.html"; return; }
+            authSession = data.session;
+            if (!videoPath) {
                 showError("No swing video was provided. Please <a href='dashboard.html'>upload a swing</a> first.");
                 return;
             }
-            log('Video URL: ' + videoUrl.slice(0, 60) + '…');
+            log('Video path: ' + videoPath.slice(0, 60) + '…');
 
             // --- Phase A: WASM runtime ---
             let fileset;
@@ -212,14 +225,15 @@
             log('Fetching video as blob…');
             let blobUrl;
             try {
-                const resp = await withTimeout(fetch(videoUrl), 25000, 'Video download');
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                const blob = await resp.blob();
+                // Private bucket: download through the user's authenticated session.
+                const { data: blob, error } = await withTimeout(
+                    sbClient.storage.from('swing-videos').download(videoPath), 25000, 'Video download');
+                if (error) throw error;
                 log('Video downloaded ✓ (' + (blob.size / 1048576).toFixed(1) + ' MB, type: ' + (blob.type || 'unknown') + ')');
                 blobUrl = URL.createObjectURL(blob);
             } catch (err) {
                 log('Video fetch FAILED: ' + err.message);
-                showError("Couldn't download your video for analysis: " + err.message + "<br>If this mentions CORS, the storage bucket must be public. Otherwise check the connection and retry.");
+                showError("Couldn't download your video for analysis: " + err.message + "<br>Make sure you're signed in to the account that uploaded it, then retry.");
                 return;
             }
 
@@ -593,8 +607,16 @@
             try {
                 const r = await fetch("/api/analyze", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ metrics, angle: cameraAngle, video_url: videoUrl }),
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + authSession.access_token,
+                    },
+                    body: JSON.stringify({
+                        metrics,
+                        angle: cameraAngle,
+                        video_url: videoPath,               // storage path; history signs it per-view
+                        user_id: authSession.user.id,
+                    }),
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.error || "Analysis failed");
