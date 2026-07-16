@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — TrueStroke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <style>
+        :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666; --border-light: #eee; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-white); color: var(--text-dark); }
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 25px 8%; border-bottom: 1px solid var(--border-light); }
+        .logo { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: var(--forest-green); text-decoration: none; }
+        .container { max-width: 420px; margin: 70px auto; padding: 0 20px; }
+        h1 { font-family: 'Playfair Display', serif; font-size: 2.2rem; color: var(--forest-green); text-align: center; margin-bottom: 6px; }
+        .subtext { color: var(--text-gray); text-align: center; margin-bottom: 34px; font-size: 0.95rem; }
+        .tabs { display: flex; border: 1px solid var(--border-light); border-radius: 6px; overflow: hidden; margin-bottom: 26px; }
+        .tab { flex: 1; text-align: center; padding: 12px; cursor: pointer; font-size: 0.92rem; color: var(--text-gray); background: #fff; }
+        .tab.active { background: var(--forest-green); color: #fff; font-weight: 600; }
+        label { display: block; font-size: 0.82rem; color: var(--text-gray); margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        input[type=email], input[type=password] { width: 100%; box-sizing: border-box; padding: 13px 14px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; font-family: 'Inter', sans-serif; }
+        input:focus { outline: none; border-color: var(--gold); }
+        .consent { display: none; margin-top: 18px; font-size: 0.85rem; color: var(--text-gray); line-height: 1.6; }
+        .consent input { margin-right: 8px; }
+        .consent a { color: var(--forest-green); font-weight: 600; }
+        .btn { width: 100%; background: var(--forest-green); color: #fff; padding: 15px; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 24px; transition: background-color 0.3s; }
+        .btn:hover { background: var(--light-green); }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        #msg { margin-top: 18px; font-size: 0.92rem; text-align: center; min-height: 1.4em; }
+        #configError { display: none; margin-bottom: 24px; background: #fff7e6; border: 1px solid var(--gold); color: #6b5320; border-radius: 8px; padding: 14px 18px; font-size: 0.9rem; }
+        #configError code { background: #f0ead9; padding: 1px 5px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <nav><a href="index.html" class="logo">TrueStroke</a></nav>
+    <div class="container">
+        <h1 id="title">Welcome Back</h1>
+        <p class="subtext" id="subtitle">Sign in to analyze your swing.</p>
+        <div id="configError"></div>
+
+        <div class="tabs">
+            <div class="tab active" id="tabIn">Sign In</div>
+            <div class="tab" id="tabUp">Create Account</div>
+        </div>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" autocomplete="email">
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password">
+
+        <div class="consent" id="consent">
+            <label style="text-transform:none;letter-spacing:0;font-size:0.85rem;display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="agree" style="margin-top:3px;">
+                <span>I am at least 13 years old and I agree to the <a href="terms.html" target="_blank">Terms of Service</a> and <a href="privacy.html" target="_blank">Privacy Policy</a>.</span>
+            </label>
+        </div>
+
+        <button class="btn" id="go">Sign In</button>
+        <div id="msg"></div>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let mode = "in";
+        let sb = null;
+
+        if (!window.TS_CONFIG || window.TS_CONFIG.SUPABASE_URL.includes("YOUR-PROJECT-REF")) {
+            $("configError").style.display = "block";
+            $("configError").innerHTML = "<strong>Setup needed:</strong> paste your Supabase URL and anon key into <code>config.js</code>.";
+            $("go").disabled = true;
+        } else {
+            sb = window.supabase.createClient(window.TS_CONFIG.SUPABASE_URL, window.TS_CONFIG.SUPABASE_ANON_KEY);
+            // Already signed in? Straight to the app.
+            sb.auth.getSession().then(({ data }) => { if (data.session) location.href = "dashboard.html"; });
+        }
+
+        function setMode(m) {
+            mode = m;
+            $("tabIn").classList.toggle("active", m === "in");
+            $("tabUp").classList.toggle("active", m === "up");
+            $("consent").style.display = m === "up" ? "block" : "none";
+            $("title").textContent = m === "up" ? "Create Your Account" : "Welcome Back";
+            $("subtitle").textContent = m === "up" ? "Your swings stay private to your account." : "Sign in to analyze your swing.";
+            $("go").textContent = m === "up" ? "Create Account" : "Sign In";
+            $("msg").textContent = "";
+        }
+        $("tabIn").addEventListener("click", () => setMode("in"));
+        $("tabUp").addEventListener("click", () => setMode("up"));
+
+        $("go").addEventListener("click", async () => {
+            if (!sb) return;
+            const email = $("email").value.trim();
+            const password = $("password").value;
+            const msg = $("msg");
+            msg.style.color = "#b00020";
+            if (!email || !password) { msg.textContent = "Enter your email and a password."; return; }
+            if (password.length < 8) { msg.textContent = "Password must be at least 8 characters."; return; }
+            if (mode === "up" && !$("agree").checked) {
+                msg.textContent = "Please confirm your age and agree to the Terms and Privacy Policy.";
+                return;
+            }
+            $("go").disabled = true;
+            try {
+                if (mode === "up") {
+                    const { data, error } = await sb.auth.signUp({ email, password });
+                    if (error) throw error;
+                    if (data.session) {
+                        location.href = "dashboard.html";
+                    } else {
+                        msg.style.color = "var(--forest-green)";
+                        msg.textContent = "Check your email for a confirmation link, then sign in.";
+                    }
+                } else {
+                    const { error } = await sb.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    location.href = "dashboard.html";
+                }
+            } catch (err) {
+                msg.textContent = err.message || "Something went wrong. Please try again.";
+            } finally {
+                $("go").disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
