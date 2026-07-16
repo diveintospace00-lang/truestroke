@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
     <style>
         :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
@@ -40,7 +41,10 @@
 <body>
     <nav>
         <a href="index.html" class="logo">TrueStroke</a>
-        <div class="nav-links"><a href="dashboard.html">New Analysis</a></div>
+        <div class="nav-links">
+            <a href="dashboard.html">New Analysis</a>
+            <a href="#" onclick="signOut(); return false;">Sign Out</a>
+        </div>
     </nav>
     <div class="container">
         <h1>My Swings</h1>
@@ -56,19 +60,15 @@
         <div id="loading">Loading your swings…</div>
         <div id="empty" style="display:none;">No swings saved yet. <a href="dashboard.html">Analyze your first swing</a> and it will appear here.</div>
         <div id="list"></div>
+        <div style="text-align:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--border-light);">
+            <a href="#" onclick="deleteAccount(); return false;" style="color:#b00020;font-size:0.85rem;">Delete my account and all data</a>
+        </div>
     </div>
 
     <script>
-        // ============================================================
-        // PASTE THE SAME SUPABASE CREDENTIALS AS dashboard.html
-        // ============================================================
-        const SUPABASE_URL = "https://ponmbdzsjkjnczckczyz.supabase.co";
-        const SUPABASE_ANON_KEY = "sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN";
-        // ============================================================
-        // NOTE (pre-launch): there are no user accounts yet, so this page
-        // shows EVERY saved swing, from anyone using the site. Fine while
-        // you're the only tester — add auth before real customers arrive.
-        // ============================================================
+        const SUPABASE_URL = (window.TS_CONFIG || {}).SUPABASE_URL || "YOUR-PROJECT-REF";
+        const SUPABASE_ANON_KEY = (window.TS_CONFIG || {}).SUPABASE_ANON_KEY || "YOUR_SUPABASE";
+        let sb = null, session = null;
 
         const $ = (id) => document.getElementById(id);
 
@@ -80,12 +80,15 @@
 
         async function load() {
             if (SUPABASE_URL.includes("YOUR-PROJECT-REF") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
-                fail("<strong>Setup needed:</strong> open <code>history.html</code> and paste the same <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> you used in <code>dashboard.html</code>.");
+                fail("<strong>Setup needed:</strong> paste your Supabase URL and anon key into <code>config.js</code>.");
                 return;
             }
+            sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            const { data: authData } = await sb.auth.getSession();
+            if (!authData.session) { location.href = "login.html"; return; }
+            session = authData.session;
             let rows;
             try {
-                const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 const { data, error } = await sb
                     .from("swing_analyses")
                     .select("id, created_at, video_url, analysis_text, status")
@@ -126,12 +129,18 @@
                 [m.x_factor !== undefined ? m.x_factor + "°" : "—", "X-Factor" + est],
             ].map(([v, l]) => `<div class="m"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
             const summary = r.a.summary ? `<div class="swing-summary">${escapeHtml(r.a.summary)}</div>` : "";
-            const video = r.video_url ? `<a href="${r.video_url}" target="_blank" rel="noopener">▶ Watch swing</a>` : "";
-            return `<div class="swing-card">
+            const isPath = r.video_url && !/^https?:/i.test(r.video_url);
+            const video = r.video_url
+                ? (isPath
+                    ? `<a href="#" onclick="watchSwing('${r.video_url.replace(/'/g, "\\'")}'); return false;">▶ Watch swing</a>`
+                    : `<a href="${r.video_url}" target="_blank" rel="noopener">▶ Watch swing</a>`)
+                : "";
+            const del = `<a href="#" style="color:#b00020;" onclick="deleteSwing('${r.id}', ${isPath ? `'${r.video_url.replace(/'/g, "\\'")}'` : "null"}); return false;">Delete</a>`;
+            return `<div class="swing-card" id="card-${r.id}">
                 <div class="swing-head"><span class="swing-date">${when}</span><span class="angle-badge">${angle}</span></div>
                 <div class="mrow">${metricHtml}</div>
                 ${summary}
-                <div class="swing-links">${video}</div>
+                <div class="swing-links">${video}${del}</div>
             </div>`;
         }
 
@@ -165,6 +174,53 @@
                 `<polyline points="${line}" fill="none" stroke="#1a3c34" stroke-width="2.5"/>` + dots;
             $("trendCard").style.display = "block";
         }
+
+        // Private bucket: mint a short-lived signed URL per view.
+        window.watchSwing = async function (path) {
+            try {
+                const { data, error } = await sb.storage.from('swing-videos').createSignedUrl(path, 3600);
+                if (error) throw error;
+                window.open(data.signedUrl, '_blank', 'noopener');
+            } catch (err) {
+                alert("Couldn't open the video: " + err.message);
+            }
+        };
+
+        window.deleteSwing = async function (id, path) {
+            if (!confirm("Delete this swing and its video permanently?")) return;
+            try {
+                if (path) await sb.storage.from('swing-videos').remove([path]);
+                const { error } = await sb.from('swing_analyses').delete().eq('id', id);
+                if (error) throw error;
+                const card = document.getElementById('card-' + id);
+                if (card) card.remove();
+            } catch (err) {
+                alert("Couldn't delete: " + err.message);
+            }
+        };
+
+        window.signOut = async function () {
+            await sb.auth.signOut();
+            location.href = "login.html";
+        };
+
+        window.deleteAccount = async function () {
+            if (!confirm("Delete your ENTIRE account? All swings, videos, and history will be permanently erased. This cannot be undone.")) return;
+            if (!confirm("Last check — permanently delete your TrueStroke account?")) return;
+            try {
+                const r = await fetch("/api/delete-account", {
+                    method: "POST",
+                    headers: { "Authorization": "Bearer " + session.access_token },
+                });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error || "Deletion failed");
+                await sb.auth.signOut();
+                alert("Your account and all data have been deleted.");
+                location.href = "index.html";
+            } catch (err) {
+                alert("Couldn't delete the account: " + err.message);
+            }
+        };
 
         function escapeHtml(s) {
             return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
