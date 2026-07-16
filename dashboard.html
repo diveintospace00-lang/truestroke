@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
     <style>
         :root { --forest-green: #1a3c34; --light-green: #2d5a4e; --gold: #c5a059; --bg-white: #fdfdfd; --text-dark: #1a1a1a; --text-gray: #666666; --border-light: #eee; }
         body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-white); color: var(--text-dark); }
@@ -38,7 +39,10 @@
 <body>
     <nav>
         <a href="index.html" class="logo">TrueStroke</a>
-        <a href="history.html" style="text-decoration:none;color:var(--text-dark);font-size:0.9rem;">My Swings</a>
+        <div>
+            <a href="history.html" style="text-decoration:none;color:var(--text-dark);font-size:0.9rem;">My Swings</a>
+            <a href="#" id="signOut" style="text-decoration:none;color:var(--text-gray);font-size:0.9rem;margin-left:22px;">Sign Out</a>
+        </div>
     </nav>
     <div class="container">
         <h1>Upload Your Swing</h1>
@@ -77,8 +81,9 @@
         // it is protected by your Row Level Security policies.
         // Find both under: Supabase → Project Settings → API
         // ============================================================
-        const SUPABASE_URL = "https://ponmbdzsjkjnczckczyz.supabase.co";
-        const SUPABASE_ANON_KEY = "sb_publishable_-w7XYn3jeBNDeP4sUovUTg_keYe-mkN";
+        const SUPABASE_URL = (window.TS_CONFIG || {}).SUPABASE_URL || "YOUR-PROJECT-REF";
+        const SUPABASE_ANON_KEY = (window.TS_CONFIG || {}).SUPABASE_ANON_KEY || "YOUR_SUPABASE";
+        let currentUser = null;
         // ============================================================
 
         const dropzone = document.getElementById('dropzone');
@@ -110,13 +115,17 @@
             if (SUPABASE_URL.includes("YOUR-PROJECT-REF") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
                 configError.style.display = "block";
                 configError.innerHTML =
-                    "<strong>Setup needed:</strong> open <code>dashboard.html</code> and replace " +
-                    "<code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> with the values from " +
-                    "Supabase → Project Settings → API. Upload is disabled until then.";
+                    "<strong>Setup needed:</strong> paste your Supabase URL and anon key into <code>config.js</code>. " +
+                    "Upload is disabled until then.";
                 return false;
             }
             try {
                 sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                // Require a signed-in user; everything on this page is account-scoped.
+                sbClient.auth.getSession().then(({ data }) => {
+                    if (!data.session) { location.href = "login.html"; return; }
+                    currentUser = data.session.user;
+                });
                 return true;
             } catch (err) {
                 configError.style.display = "block";
@@ -156,6 +165,12 @@
             }
         });
 
+        document.getElementById('signOut').addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (sbClient) await sbClient.auth.signOut();
+            location.href = "login.html";
+        });
+
         analyzeBtn.addEventListener('click', async () => {
             if (!selectedFile || !sbClient || !selectedAngle) return;
             analyzeBtn.disabled = true;
@@ -163,8 +178,10 @@
             status.textContent = 'Uploading video…';
 
             // Keep the original extension so the <video> element knows the type.
+            if (!currentUser) { location.href = "login.html"; return; }
             const safeName = selectedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-            const fileName = `${Date.now()}_${safeName}`;
+            // Path MUST start with the user's id — the storage policies enforce it.
+            const fileName = `${currentUser.id}/${Date.now()}_${safeName}`;
 
             try {
                 const { error } = await sbClient.storage
@@ -176,13 +193,10 @@
                     });
                 if (error) throw error;
 
-                const { data: urlData } = sbClient.storage
-                    .from('swing-videos')
-                    .getPublicUrl(fileName);
-
-                const publicUrl = urlData.publicUrl;
                 status.textContent = 'Upload complete. Opening analysis…';
-                window.location.href = `analysis.html?video=${encodeURIComponent(publicUrl)}&angle=${selectedAngle}`;
+                // Bucket is private: pass the storage PATH; the analysis page downloads
+                // it through the user's own authenticated session.
+                window.location.href = `analysis.html?path=${encodeURIComponent(fileName)}&angle=${selectedAngle}`;
             } catch (err) {
                 status.style.color = '#cc0000';
                 status.textContent = `Upload failed: ${err.message}`;
